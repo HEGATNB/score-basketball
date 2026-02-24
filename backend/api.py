@@ -7,6 +7,7 @@ import pickle
 import os
 import asyncio
 from tensorflow.keras.models import load_model
+from pathlib import Path
 
 # Импортируем функции из наших модулей
 from backend.scripts.update_data import update_db_with_new_games
@@ -29,7 +30,25 @@ team_emas = {}
 teams_df = None
 STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
 MODEL_DIR = "./models"
-DB_PATH = "./nba.sqlite"
+
+# Функция для поиска файла базы данных
+def find_database_file():
+    """Ищет файл базы данных с расширением .sqlite или .sql"""
+    possible_extensions = ['.sqlite', '.sql', '.db', '.db3']
+    
+    for ext in possible_extensions:
+        db_path = f"./nba{ext}"
+        if os.path.exists(db_path):
+            print(f"Found database file: {db_path}")
+            return db_path
+    
+    # Если не нашли, создаем с расширением .sqlite по умолчанию
+    default_path = "./nba.sqlite"
+    print(f"Database file not found, will use default: {default_path}")
+    return default_path
+
+# Определяем путь к базе данных
+DB_PATH = find_database_file()
 
 class PredictionRequest(BaseModel):
     home_team: str
@@ -56,6 +75,8 @@ def load_artifacts():
     with open(emas_path, "rb") as f:
         team_emas = pickle.load(f)
     teams_df = pd.read_csv(teams_path)
+    
+    print(f"Using database: {DB_PATH}")
 
 @app.get("/teams")
 def get_teams():
@@ -99,6 +120,7 @@ async def retrain_task():
         loop = asyncio.get_event_loop()
         print("Starting data update...")
         # Обновляем базу новыми играми (последние 7 дней)
+        # Передаем найденный путь к базе данных
         await loop.run_in_executor(None, update_db_with_new_games, DB_PATH, 7)
         print("Data update completed. Starting model training...")
         # Переобучаем модель
@@ -119,3 +141,17 @@ async def retrain(background_tasks: BackgroundTasks):
 @app.get("/")
 def root():
     return {"message": "NBA Game Predictor API"}
+
+@app.get("/db-info")
+def db_info():
+    """Возвращает информацию о текущем файле базы данных"""
+    db_path = DB_PATH
+    db_exists = os.path.exists(db_path)
+    db_size = os.path.getsize(db_path) if db_exists else 0
+    
+    return {
+        "database_path": db_path,
+        "database_exists": db_exists,
+        "database_size_bytes": db_size,
+        "database_size_mb": round(db_size / (1024 * 1024), 2) if db_exists else 0
+    }
