@@ -118,8 +118,27 @@ def save_model_metrics_to_db(
         )
         cursor = conn.cursor()
 
-        # Подготавливаем метаданные
+        # Создаем таблицу, если её нет
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS model_metrics (
+                id SERIAL PRIMARY KEY,
+                model_version VARCHAR(50) NOT NULL,
+                training_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                training_games_count INTEGER,
+                accuracy FLOAT,
+                loss FLOAT,
+                validation_accuracy FLOAT,
+                validation_loss FLOAT,
+                features_count INTEGER,
+                training_duration_seconds FLOAT,
+                status VARCHAR(20) DEFAULT 'completed',
+                error_message TEXT,
+                metadata JSONB
+            )
+        """)
+        conn.commit()
 
+        # Подготавливаем метаданные
         if metadata is None:
             metadata = {}
 
@@ -129,7 +148,6 @@ def save_model_metrics_to_db(
         metadata['batch_size'] = 64
 
         # Вставляем запись
-
         cursor.execute("""
             INSERT INTO model_metrics (
                 model_version,
@@ -163,12 +181,13 @@ def save_model_metrics_to_db(
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"Метрики модели сохранены в БД: validation_accuracy={validation_accuracy:.4f}")
+        print(f"✅ Metrics saved to DB: validation_accuracy={validation_accuracy:.4f}")
         return True
     except Exception as e:
-        print(f"Ошибка сохранения метрик: {e}")
+        print(f"❌ Error saving metrics: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-
 
 # Парсер дат
 

@@ -5,6 +5,7 @@
       dockerfile: nginx/Dockerfile
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - backend
     networks:
@@ -27,24 +28,7 @@
     networks:
       - app_network
 
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: nba
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - app_network
+  # Удаляем сервис db полностью или комментируем его
 
   backend:
     build: ./backend
@@ -53,44 +37,39 @@
     environment:
       - DB_NAME=nba
       - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - DB_HOST=db
+      - DB_PASSWORD=12345678
+      - DB_HOST=host.docker.internal  # Для Windows/Mac
+      # - DB_HOST=172.17.0.1  # Для Linux (раскомментируйте эту строку)
       - DB_PORT=5432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET:-hzIoUfN8qA5t535Rpv_jvyzul5aRLwxLPJIxcINBCx4}
+      - JWT_SECRET=hzIoUfN8qA5t535Rpv_jvyzul5aRLwxLPJIxcINBCx4
       - JWT_EXPIRES_IN=7d
       - ENVIRONMENT=development
       - MODEL_DIR=/app/models
-      - DB_PATH=/app/nba.sqlite
+      - TRUSTED_HOSTS=localhost,backend,nginx,127.0.0.1
+      - SECURE_COOKIES=true
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - redis
     volumes:
       - ./backend:/app
       - /app/__pycache__
       - backend_models:/app/models
       - backend_backups:/app/backups
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Для Linux
     restart: unless-stopped
     networks:
       - app_network
     dns:
       - 8.8.8.8
-      - 8.8.4.4
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 1.1.1.1
 
 networks:
   app_network:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_icc: "true"
-      com.docker.network.bridge.enable_ip_masquerade: "true"
 
 volumes:
-  postgres_data:
   redis_data:
   backend_models:
   backend_backups:

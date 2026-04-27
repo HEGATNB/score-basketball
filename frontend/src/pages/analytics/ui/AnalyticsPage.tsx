@@ -143,7 +143,7 @@ export const AnalyticsPage = () => {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b]" />
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(232,161,67,0.2)] border-t-[var(--accent)]" />
           <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Loading analytics feed</p>
         </div>
       </div>
@@ -234,12 +234,12 @@ export const AnalyticsPage = () => {
       </section>
 
       {tab === 'model' && (
-        <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <GlowingCard glowColor="blue" className="p-6">
+        <div className="grid gap-6 2xl:grid-cols-[340px_minmax(0,1fr)]">
+          <GlowingCard glowColor="blue" className="h-full p-6">
             <h2 className="text-2xl font-semibold text-white">Model health</h2>
             <div className="mt-6 space-y-6">
               <ProgressBar value={trackedAccuracy} label="Prediction accuracy" />
-              <ProgressBar value={dataDepth} label="Historical data depth" color="#607d96" />
+              <ProgressBar value={dataDepth} label="Historical data depth" color="#1d428a" />
               <ProgressBar value={rosterCoverage} label="Roster coverage" color="#34d399" />
               <ProgressBar value={scheduleReadiness} label="Schedule readiness" color="#f59e0b" />
             </div>
@@ -260,7 +260,7 @@ export const AnalyticsPage = () => {
             </div>
           </GlowingCard>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <BarChartComponent title="Health snapshot" data={modelHealth} dataKey="value" xAxisKey="metric" />
             <PieChartComponent title="Model factor distribution" data={featureWeights} nameKey="name" valueKey="value" />
           </div>
@@ -270,7 +270,7 @@ export const AnalyticsPage = () => {
       {tab === 'league' && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="grid gap-6 lg:grid-cols-2">
-            <LineChartComponent title="Contender win-rate board" data={contenderTrend} dataKey="winRate" xAxisKey="team" color="#607d96" />
+            <LineChartComponent title="Contender win-rate board" data={contenderTrend} dataKey="winRate" xAxisKey="team" color="#1d428a" />
             <BarChartComponent title="Offensive output by top teams" data={offenseBoard} dataKey="points" xAxisKey="team" />
           </div>
 

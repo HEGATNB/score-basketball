@@ -7,10 +7,11 @@ import io
 import requests
 import os
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config import config
 
-# Устанавливаем кодирвку
+# Устанавливаем кодировку
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
@@ -23,6 +24,7 @@ DB_PORT = config.DB_PORT
 
 # Расширенный маппинг названий команд из ESPN в аббревиатуры БД
 TEAM_NAME_MAP = {
+    # Полные названия
     'Atlanta Hawks': 'ATL',
     'Boston Celtics': 'BOS',
     'Brooklyn Nets': 'BKN',
@@ -54,14 +56,44 @@ TEAM_NAME_MAP = {
     'Toronto Raptors': 'TOR',
     'Utah Jazz': 'UTA',
     'Washington Wizards': 'WAS',
-    'LA Lakers': 'LAL',
-    'New Orleans': 'NOP',
-    'Oklahoma City': 'OKC',
-    'San Antonio': 'SAS',
-    'Golden State': 'GSW',
+
+    # Сокращенные названия из ESPN
+    'Atlanta': 'ATL',
+    'Boston': 'BOS',
     'Brooklyn': 'BKN',
     'Charlotte': 'CHA',
+    'Chicago': 'CHI',
+    'Cleveland': 'CLE',
+    'Dallas': 'DAL',
+    'Denver': 'DEN',
+    'Detroit': 'DET',
+    'Golden State': 'GSW',
+    'Houston': 'HOU',
+    'Indiana': 'IND',
+    'LA Clippers': 'LAC',
+    'LA Lakers': 'LAL',
+    'Memphis': 'MEM',
+    'Miami': 'MIA',
+    'Milwaukee': 'MIL',
+    'Minnesota': 'MIN',
+    'New Orleans': 'NOP',
+    'New York': 'NYK',
+    'Oklahoma City': 'OKC',
+    'Orlando': 'ORL',
+    'Philadelphia': 'PHI',
     'Phoenix': 'PHX',
+    'Portland': 'POR',
+    'Sacramento': 'SAC',
+    'San Antonio': 'SAS',
+    'Toronto': 'TOR',
+    'Utah': 'UTA',
+    'Washington': 'WAS',
+
+    # Варианты с точкой
+    'L.A. Clippers': 'LAC',
+    'L.A. Lakers': 'LAL',
+
+    # Специальные
     'Team Stars': 'ALL',
     'Team Stripes': 'ALL',
     'World': 'ALL',
@@ -82,9 +114,36 @@ def get_db_connection():
     )
     return conn
 
-# Создание словаря {team_abbreviation: team_id} из таблицы game
+
+def find_team_abbrev(team_name: str) -> str:
+    """Находит аббревиатуру команды по названию с частичным совпадением"""
+    if not team_name:
+        return None
+
+    team_name_lower = team_name.lower()
+
+    # 1. Точное совпадение
+    for name, abbrev in TEAM_NAME_MAP.items():
+        if name.lower() == team_name_lower:
+            return abbrev
+
+    # 2. Частичное совпадение (город или название)
+    for name, abbrev in TEAM_NAME_MAP.items():
+        name_parts = name.lower().split()
+        for part in name_parts:
+            if part in team_name_lower and len(part) > 3:
+                return abbrev
+
+    # 3. Поиск по аббревиатуре (если вдруг пришла аббревиатура)
+    team_name_upper = team_name.upper()
+    if team_name_upper in TEAM_NAME_MAP.values():
+        return team_name_upper
+
+    return None
+
 
 def get_team_id_map(conn):
+    """Создание словаря {team_abbreviation: team_id} из таблицы game"""
     cursor = conn.cursor()
     cursor.execute("""
         SELECT DISTINCT team_abbreviation_home as abbrev, team_id_home as team_id 
@@ -110,9 +169,9 @@ def is_special_game(away_name, home_name):
             return True
     return False
 
-# Получение новых игр
 
 def fetch_espn_games(date):
+    """Получение списка игр с ESPN API"""
     date_str = date.strftime("%Y%m%d")
     url = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     params = {"dates": date_str, "limit": 100}
@@ -120,16 +179,19 @@ def fetch_espn_games(date):
     try:
         response = requests.get(url, params=params, timeout=15)
         if response.status_code != 200:
+            print(f"  ❌ ESPN API error: {response.status_code}")
             return []
         data = response.json()
-        return data.get('events', [])
+        events = data.get('events', [])
+        print(f"  📡 Fetched {len(events)} events from ESPN for {date}")
+        return events
     except Exception as e:
         print(f"  ❌ Error fetching ESPN: {e}")
         return []
 
-# Получаем статистику игры
 
 def fetch_detailed_stats(game_id):
+    """Получение детальной статистики игры"""
     url = f"http://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
     params = {"event": game_id}
 
@@ -156,217 +218,8 @@ def fetch_detailed_stats(game_id):
         return None
 
 
-def update_existing_games(conn, days_back=2):
-    """
-    Обновляет результаты существующих матчей за последние дни.
-    Особенно важно для матчей, которые были в статусе scheduled и теперь завершились.
-    """
-    print(f"\n{'=' * 60}")
-    print("🔄 ОБНОВЛЕНИЕ РЕЗУЛЬТАТОВ ЗАВЕРШИВШИХСЯ МАТЧЕЙ")
-    print(f"📅 Проверяем матчи за последние {days_back} дней")
-    print(f"{'=' * 60}")
-
-    cursor = conn.cursor()
-    today = datetime.now().date()
-    updated_count = 0
-    already_finished = 0
-
-    for i in range(days_back):
-        date = today - timedelta(days=i)
-        print(f"\n📅 Проверка матчей за {date}")
-
-        # Исправленный запрос - используем %s вместо :date и DATE() вместо ::date
-        cursor.execute("""
-            SELECT game_id, team_id_home, team_id_away, team_abbreviation_home, team_abbreviation_away,
-                   team_name_home, team_name_away, pts_home, pts_away, wl_home, wl_away
-            FROM game
-            WHERE DATE(game_date) = %s
-              AND (pts_home IS NULL OR pts_away IS NULL)
-        """, (date,))
-
-        pending_games = cursor.fetchall()
-
-        if not pending_games:
-            print(f"   ✅ Нет незавершенных матчей за {date}")
-            continue
-
-        print(f"   📋 Найдено {len(pending_games)} незавершенных матчей")
-
-        # Получаем актуальные данные из ESPN
-        events = fetch_espn_games(date)
-        if not events:
-            print(f"   ⚠️ Не удалось получить данные с ESPN")
-            continue
-
-        # Создаем словарь для быстрого поиска
-        espn_games = {}
-        for event in events:
-            try:
-                competitions = event.get('competitions', [{}])[0]
-                competitors = competitions.get('competitors', [])
-                if len(competitors) >= 2:
-                    away_name = competitors[0].get('team', {}).get('displayName', '')
-                    home_name = competitors[1].get('team', {}).get('displayName', '')
-                    espn_games[f"{home_name}_{away_name}"] = event
-                    espn_games[f"{away_name}_{home_name}"] = event
-                    # Также сохраняем по game_id
-                    espn_games[event.get('id')] = event
-            except Exception as e:
-                continue
-
-        # Обновляем каждый незавершенный матч
-        for game in pending_games:
-            game_data = dict(game._mapping)
-            home_name = game_data.get("team_name_home")
-            away_name = game_data.get("team_name_away")
-            game_id = game_data.get("game_id")
-
-            # Ищем матч по названиям команд или по ID
-            espn_game = espn_games.get(f"{home_name}_{away_name}")
-            if not espn_game:
-                # Пробуем найти по ID (убираем префикс ESPN_)
-                clean_id = game_id.replace("ESPN_", "")
-                espn_game = espn_games.get(clean_id)
-
-            if not espn_game:
-                print(f"   ⚠️ Не найден матч в ESPN: {home_name} vs {away_name}")
-                continue
-
-            # Получаем детальную статистику
-            detailed_stats = fetch_detailed_stats(espn_game.get('id'))
-            if not detailed_stats:
-                print(f"   ⚠️ Не удалось получить статистику для {home_name} vs {away_name}")
-                continue
-
-            # Получаем счет из ESPN
-            competitions = espn_game.get('competitions', [{}])[0]
-            competitors = competitions.get('competitors', [])
-            home_score = 0
-            away_score = 0
-
-            for comp in competitors:
-                if comp.get('homeAway') == 'home':
-                    home_score = int(comp.get('score', 0))
-                else:
-                    away_score = int(comp.get('score', 0))
-
-            # Проверяем, есть ли уже счет (матч мог завершиться)
-            if home_score == 0 and away_score == 0:
-                print(f"   ⏳ Матч еще не завершен: {home_name} vs {away_name}")
-                continue
-
-            home_win = home_score > away_score
-            home_stats = detailed_stats.get('home', {})
-            away_stats = detailed_stats.get('away', {})
-
-            def safe_pct(made, att):
-                return round(made / att, 3) if att and att > 0 else 0
-
-            # Исправленный UPDATE запрос - используем %s вместо :param
-            try:
-                cursor.execute("""
-                    UPDATE game SET
-                        pts_home = %s, 
-                        pts_away = %s,
-                        wl_home = %s, 
-                        wl_away = %s,
-                        fgm_home = %s, 
-                        fga_home = %s, 
-                        fg_pct_home = %s,
-                        fg3m_home = %s, 
-                        fg3a_home = %s, 
-                        fg3_pct_home = %s,
-                        ftm_home = %s, 
-                        fta_home = %s, 
-                        ft_pct_home = %s,
-                        oreb_home = %s, 
-                        dreb_home = %s, 
-                        reb_home = %s,
-                        ast_home = %s, 
-                        stl_home = %s, 
-                        blk_home = %s,
-                        tov_home = %s, 
-                        pf_home = %s,
-                        fgm_away = %s, 
-                        fga_away = %s, 
-                        fg_pct_away = %s,
-                        fg3m_away = %s, 
-                        fg3a_away = %s, 
-                        fg3_pct_away = %s,
-                        ftm_away = %s, 
-                        fta_away = %s, 
-                        ft_pct_away = %s,
-                        oreb_away = %s, 
-                        dreb_away = %s, 
-                        reb_away = %s,
-                        ast_away = %s, 
-                        stl_away = %s, 
-                        blk_away = %s,
-                        tov_away = %s, 
-                        pf_away = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE game_id = %s
-                """, (
-                    home_score, away_score,
-                    'W' if home_win else 'L', 'L' if home_win else 'W',
-                    home_stats.get('fieldGoalsMade', 0),
-                    home_stats.get('fieldGoalsAttempted', 0),
-                    safe_pct(home_stats.get('fieldGoalsMade', 0), home_stats.get('fieldGoalsAttempted', 0)),
-                    home_stats.get('threePointFieldGoalsMade', 0),
-                    home_stats.get('threePointFieldGoalsAttempted', 0),
-                    safe_pct(home_stats.get('threePointFieldGoalsMade', 0), home_stats.get('threePointFieldGoalsAttempted', 0)),
-                    home_stats.get('freeThrowsMade', 0),
-                    home_stats.get('freeThrowsAttempted', 0),
-                    safe_pct(home_stats.get('freeThrowsMade', 0), home_stats.get('freeThrowsAttempted', 0)),
-                    home_stats.get('offensiveRebounds', 0),
-                    home_stats.get('defensiveRebounds', 0),
-                    home_stats.get('rebounds', 0),
-                    home_stats.get('assists', 0),
-                    home_stats.get('steals', 0),
-                    home_stats.get('blocks', 0),
-                    home_stats.get('turnovers', 0),
-                    home_stats.get('fouls', 0),
-                    away_stats.get('fieldGoalsMade', 0),
-                    away_stats.get('fieldGoalsAttempted', 0),
-                    safe_pct(away_stats.get('fieldGoalsMade', 0), away_stats.get('fieldGoalsAttempted', 0)),
-                    away_stats.get('threePointFieldGoalsMade', 0),
-                    away_stats.get('threePointFieldGoalsAttempted', 0),
-                    safe_pct(away_stats.get('threePointFieldGoalsMade', 0), away_stats.get('threePointFieldGoalsAttempted', 0)),
-                    away_stats.get('freeThrowsMade', 0),
-                    away_stats.get('freeThrowsAttempted', 0),
-                    safe_pct(away_stats.get('freeThrowsMade', 0), away_stats.get('freeThrowsAttempted', 0)),
-                    away_stats.get('offensiveRebounds', 0),
-                    away_stats.get('defensiveRebounds', 0),
-                    away_stats.get('rebounds', 0),
-                    away_stats.get('assists', 0),
-                    away_stats.get('steals', 0),
-                    away_stats.get('blocks', 0),
-                    away_stats.get('turnovers', 0),
-                    away_stats.get('fouls', 0),
-                    game_data["game_id"]
-                ))
-
-                if cursor.rowcount > 0:
-                    updated_count += 1
-                    print(f"      ✅ Обновлен результат: {home_name} {home_score} - {away_score} {away_name}")
-                else:
-                    already_finished += 1
-
-            except Exception as e:
-                print(f"      ❌ Ошибка обновления: {e}")
-
-        conn.commit()
-
-    print(f"\n📊 СТАТИСТИКА ОБНОВЛЕНИЯ:")
-    print(f"   • Обновлено результатов: {updated_count}")
-    print(f"   • Уже были завершены: {already_finished}")
-    print(f"   • Всего проверено матчей: {updated_count + already_finished}")
-
-    return updated_count
-
-# Парсит данные с api и приводит их к структуре как в базе
-
 def parse_espn_game(event, team_id_map):
+    """Парсит данные с API и приводит их к структуре как в базе"""
     try:
         game_id = event['id']
         game_date = datetime.strptime(event['date'], "%Y-%m-%dT%H:%MZ")
@@ -376,26 +229,47 @@ def parse_espn_game(event, team_id_map):
         if len(competitors) < 2:
             return None
 
-        away_competitor = competitors[0]
-        home_competitor = competitors[1]
+        # Определяем домашнюю и гостевую команды
+        away_competitor = None
+        home_competitor = None
+        for comp in competitors:
+            if comp.get('homeAway') == 'home':
+                home_competitor = comp
+            else:
+                away_competitor = comp
+
+        if not home_competitor or not away_competitor:
+            return None
+
         away_team_name = away_competitor.get('team', {}).get('displayName', '')
         home_team_name = home_competitor.get('team', {}).get('displayName', '')
 
+        # Также пробуем получить короткие названия
+        away_team_short = away_competitor.get('team', {}).get('shortDisplayName', '')
+        home_team_short = home_competitor.get('team', {}).get('shortDisplayName', '')
+
+        # Проверка на специальные игры
         if is_special_game(away_team_name, home_team_name):
+            print(f"  ⏭️ Skipping special game: {away_team_name} vs {home_team_name}")
             return None
 
-        away_abbrev = TEAM_NAME_MAP.get(away_team_name)
-        home_abbrev = TEAM_NAME_MAP.get(home_team_name)
+        # Находим аббревиатуры
+        away_abbrev = find_team_abbrev(away_team_name) or find_team_abbrev(away_team_short)
+        home_abbrev = find_team_abbrev(home_team_name) or find_team_abbrev(home_team_short)
+
         if not away_abbrev or not home_abbrev:
+            print(f"  ⚠️ Could not map teams: '{away_team_name}' -> {away_abbrev}, '{home_team_name}' -> {home_abbrev}")
             return None
 
         away_id = team_id_map.get(away_abbrev)
         home_id = team_id_map.get(home_abbrev)
+
         if not away_id or not home_id:
+            print(f"  ⚠️ Team ID not found: {away_abbrev}={away_id}, {home_abbrev}={home_id}")
             return None
 
-        away_score = int(away_competitor.get('score', 0))
-        home_score = int(home_competitor.get('score', 0))
+        away_score = int(away_competitor.get('score', 0) or 0)
+        home_score = int(home_competitor.get('score', 0) or 0)
         home_win = home_score > away_score
 
         detailed_stats = fetch_detailed_stats(game_id)
@@ -405,10 +279,14 @@ def parse_espn_game(event, team_id_map):
         def safe_pct(made, att):
             return round(made / att, 3) if att and att > 0 else 0
 
+        # Определяем season_id
+        year = game_date.year
+        season_id = f"2{year - 1 if game_date.month < 10 else year}"
+
         return {
             'game_id': f"ESPN_{game_id}",
             'game_date': game_date.strftime("%Y-%m-%d %H:%M:%S"),
-            'season_id': f"2{game_date.year - 1 if game_date.month < 10 else game_date.year}",
+            'season_id': season_id,
             'season_type': 'Regular Season',
             'team_id_home': home_id,
             'team_abbreviation_home': home_abbrev,
@@ -465,6 +343,7 @@ def parse_espn_game(event, team_id_map):
             'video_available_away': 0
         }
     except Exception as e:
+        print(f"  ❌ Error parsing game: {e}")
         return None
 
 
@@ -496,23 +375,171 @@ def insert_game(conn, game):
     finally:
         cursor.close()
 
-# Обновляет данные для scheduled матчей и затем добавляет новые матчи
-def update_db_with_new_games(db_path=None, days_back=2):
+
+def update_existing_games(conn, days_back=2):
+    """Обновляет результаты существующих матчей за последние дни"""
     print(f"\n{'=' * 60}")
-    print(f"🔄 ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ")
-    print(f"📅 За последние {days_back} дней")
-    print(f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("🔄 UPDATING EXISTING GAMES")
+    print(f"📅 Checking games from last {days_back} days")
+    print(f"{'=' * 60}")
+
+    cursor = conn.cursor()
+    today = datetime.now().date()
+    updated_count = 0
+
+    for i in range(days_back):
+        date = today - timedelta(days=i)
+        print(f"\n📅 Checking games for {date}")
+
+        cursor.execute("""
+            SELECT game_id, team_id_home, team_id_away, team_abbreviation_home, team_abbreviation_away,
+                   team_name_home, team_name_away, pts_home, pts_away, wl_home, wl_away
+            FROM game
+            WHERE DATE(game_date) = %s
+              AND (pts_home IS NULL OR pts_away IS NULL)
+        """, (date,))
+
+        pending_games = cursor.fetchall()
+
+        if not pending_games:
+            print(f"   ✅ No pending games for {date}")
+            continue
+
+        print(f"   📋 Found {len(pending_games)} pending games")
+
+        events = fetch_espn_games(date)
+        if not events:
+            print(f"   ⚠️ Could not fetch ESPN data")
+            continue
+
+        espn_games = {}
+        for event in events:
+            try:
+                competitions = event.get('competitions', [{}])[0]
+                competitors = competitions.get('competitors', [])
+                if len(competitors) >= 2:
+                    away_name = competitors[0].get('team', {}).get('displayName', '')
+                    home_name = competitors[1].get('team', {}).get('displayName', '')
+                    espn_games[f"{home_name}_{away_name}"] = event
+                    espn_games[event.get('id')] = event
+            except Exception:
+                continue
+
+        for game in pending_games:
+            game_data = dict(game._mapping)
+            home_name = game_data.get("team_name_home")
+            away_name = game_data.get("team_name_away")
+            game_id = game_data.get("game_id")
+
+            espn_game = espn_games.get(f"{home_name}_{away_name}")
+            if not espn_game:
+                clean_id = game_id.replace("ESPN_", "")
+                espn_game = espn_games.get(clean_id)
+
+            if not espn_game:
+                continue
+
+            detailed_stats = fetch_detailed_stats(espn_game.get('id'))
+            if not detailed_stats:
+                continue
+
+            competitions = espn_game.get('competitions', [{}])[0]
+            competitors = competitions.get('competitors', [])
+            home_score = 0
+            away_score = 0
+
+            for comp in competitors:
+                if comp.get('homeAway') == 'home':
+                    home_score = int(comp.get('score', 0) or 0)
+                else:
+                    away_score = int(comp.get('score', 0) or 0)
+
+            if home_score == 0 and away_score == 0:
+                continue
+
+            home_win = home_score > away_score
+            home_stats = detailed_stats.get('home', {})
+            away_stats = detailed_stats.get('away', {})
+
+            def safe_pct(made, att):
+                return round(made / att, 3) if att and att > 0 else 0
+
+            try:
+                cursor.execute("""
+                    UPDATE game SET
+                        pts_home = %s, pts_away = %s,
+                        wl_home = %s, wl_away = %s,
+                        fgm_home = %s, fga_home = %s, fg_pct_home = %s,
+                        fg3m_home = %s, fg3a_home = %s, fg3_pct_home = %s,
+                        ftm_home = %s, fta_home = %s, ft_pct_home = %s,
+                        oreb_home = %s, dreb_home = %s, reb_home = %s,
+                        ast_home = %s, stl_home = %s, blk_home = %s,
+                        tov_home = %s, pf_home = %s,
+                        fgm_away = %s, fga_away = %s, fg_pct_away = %s,
+                        fg3m_away = %s, fg3a_away = %s, fg3_pct_away = %s,
+                        ftm_away = %s, fta_away = %s, ft_pct_away = %s,
+                        oreb_away = %s, dreb_away = %s, reb_away = %s,
+                        ast_away = %s, stl_away = %s, blk_away = %s,
+                        tov_away = %s, pf_away = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE game_id = %s
+                """, (
+                    home_score, away_score,
+                    'W' if home_win else 'L', 'L' if home_win else 'W',
+                    home_stats.get('fieldGoalsMade', 0), home_stats.get('fieldGoalsAttempted', 0),
+                    safe_pct(home_stats.get('fieldGoalsMade', 0), home_stats.get('fieldGoalsAttempted', 0)),
+                    home_stats.get('threePointFieldGoalsMade', 0), home_stats.get('threePointFieldGoalsAttempted', 0),
+                    safe_pct(home_stats.get('threePointFieldGoalsMade', 0),
+                             home_stats.get('threePointFieldGoalsAttempted', 0)),
+                    home_stats.get('freeThrowsMade', 0), home_stats.get('freeThrowsAttempted', 0),
+                    safe_pct(home_stats.get('freeThrowsMade', 0), home_stats.get('freeThrowsAttempted', 0)),
+                    home_stats.get('offensiveRebounds', 0), home_stats.get('defensiveRebounds', 0),
+                    home_stats.get('rebounds', 0),
+                    home_stats.get('assists', 0), home_stats.get('steals', 0), home_stats.get('blocks', 0),
+                    home_stats.get('turnovers', 0), home_stats.get('fouls', 0),
+                    away_stats.get('fieldGoalsMade', 0), away_stats.get('fieldGoalsAttempted', 0),
+                    safe_pct(away_stats.get('fieldGoalsMade', 0), away_stats.get('fieldGoalsAttempted', 0)),
+                    away_stats.get('threePointFieldGoalsMade', 0), away_stats.get('threePointFieldGoalsAttempted', 0),
+                    safe_pct(away_stats.get('threePointFieldGoalsMade', 0),
+                             away_stats.get('threePointFieldGoalsAttempted', 0)),
+                    away_stats.get('freeThrowsMade', 0), away_stats.get('freeThrowsAttempted', 0),
+                    safe_pct(away_stats.get('freeThrowsMade', 0), away_stats.get('freeThrowsAttempted', 0)),
+                    away_stats.get('offensiveRebounds', 0), away_stats.get('defensiveRebounds', 0),
+                    away_stats.get('rebounds', 0),
+                    away_stats.get('assists', 0), away_stats.get('steals', 0), away_stats.get('blocks', 0),
+                    away_stats.get('turnovers', 0), away_stats.get('fouls', 0),
+                    game_data["game_id"]
+                ))
+
+                if cursor.rowcount > 0:
+                    updated_count += 1
+                    print(f"      ✅ Updated: {home_name} {home_score} - {away_score} {away_name}")
+            except Exception as e:
+                print(f"      ❌ Update error: {e}")
+
+        conn.commit()
+
+    print(f"\n📊 UPDATE STATS: {updated_count} games updated")
+    return updated_count
+
+
+def update_db_with_new_games(db_path=None, days_back=2):
+    """Обновляет данные для scheduled матчей и добавляет новые матчи"""
+    print(f"\n{'=' * 60}")
+    print(f"🔄 DATABASE UPDATE")
+    print(f"📅 Last {days_back} days")
+    print(f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
     conn = get_db_connection()
-    print(f"✅ Подключение к БД установлено")
+    print(f"✅ Connected to database")
 
-    # Обновляем результаты существующих матчей (scheduled -> finished)
+    # Обновляем результаты существующих матчей
     updated_results = update_existing_games(conn, days_back)
 
-    # Добавляем новые матчи (которых еще нет в БД)
+    # Добавляем новые матчи
     print(f"\n{'=' * 60}")
-    print("➕ ДОБАВЛЕНИЕ НОВЫХ МАТЧЕЙ")
+    print("➕ ADDING NEW GAMES")
     print(f"{'=' * 60}")
 
     team_id_map = get_team_id_map(conn)
@@ -523,6 +550,7 @@ def update_db_with_new_games(db_path=None, days_back=2):
 
     for i in range(days_back):
         date = today - timedelta(days=i)
+        print(f"\n📅 Processing {date}")
         events = fetch_espn_games(date)
 
         for event in events:
@@ -531,23 +559,22 @@ def update_db_with_new_games(db_path=None, days_back=2):
                 failed_count += 1
             elif insert_game(conn, game_record):
                 new_count += 1
-                print(
-                    f"  ✅ Добавлен: {game_record['team_abbreviation_away']} @ {game_record['team_abbreviation_home']}")
+                print(f"  ✅ Added: {game_record['team_abbreviation_away']} @ {game_record['team_abbreviation_home']}")
             else:
                 skipped_count += 1
-            time.sleep(0.5)
+            time.sleep(0.3)
 
         if i < days_back - 1:
-            time.sleep(2)
+            time.sleep(1)
 
     conn.close()
 
     print(f"\n{'=' * 60}")
-    print(f"📊 ИТОГОВАЯ СТАТИСТИКА ОБНОВЛЕНИЯ:")
-    print(f"   • Обновлено результатов (scheduled -> finished): {updated_results}")
-    print(f"   • Добавлено новых матчей: {new_count}")
-    print(f"   • Не удалось добавить: {failed_count}")
-    print(f"   • Пропущено (уже есть): {skipped_count}")
+    print(f"📊 FINAL STATISTICS:")
+    print(f"   • Updated results: {updated_results}")
+    print(f"   • New games added: {new_count}")
+    print(f"   • Failed to add: {failed_count}")
+    print(f"   • Skipped (already exist): {skipped_count}")
     print(f"{'=' * 60}")
 
     return {
