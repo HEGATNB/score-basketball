@@ -20,12 +20,9 @@ export const TeamPage = () => {
       setLoading(false);
       return;
     }
-
-    // Загружаем информацию о команде
     apiRequest<Team>(`/teams/${teamId}`)
       .then((teamData) => {
         setTeam(teamData);
-        // После получения команды, загружаем игроков по аббревиатуре
         if (teamData.abbrev) {
           return apiRequest<Player[]>(`/players/team/${teamData.abbrev}`)
             .then(setPlayers);

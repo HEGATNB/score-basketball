@@ -334,17 +334,13 @@ class PlayerService:
             if not all_results:
                 return None
 
-            # Сортируем по сезону (новые сначала)
             seasons_data = [dict(row._mapping) for row in all_results]
             seasons_data.sort(key=lambda x: x.get("season", ""), reverse=True)
 
-            # Берём текущий сезон (первый, самый новый)
             current = seasons_data[0]
 
-            # Собираем список всех сезонов
             seasons_list = [s.get("season") for s in seasons_data if s.get("season")]
 
-            # Разбиваем имя на части
             full_name = current.get("player_name", "")
             name_parts = full_name.split(" ")
             first_name = name_parts[0] if name_parts else ""
@@ -359,7 +355,6 @@ class PlayerService:
 
             position = current.get("position")
 
-            # Формируем объект команды
             team_obj = None
             if current.get("team_id"):
                 team_obj = {
@@ -414,11 +409,9 @@ class PlayerService:
             return None
 
     def get_players_by_team(self, team_abbrev: str) -> List[Dict[str, Any]]:
-        """Получение игроков команды по аббревиатуре"""
         return self.get_all_players(team_abbrev=team_abbrev)
 
     def get_seasons(self) -> List[str]:
-        """Получение списка всех сезонов"""
         try:
             result = self.db.execute(
                 text("SELECT DISTINCT season FROM players ORDER BY season DESC")
@@ -434,7 +427,6 @@ class PlayerService:
             min_games: int = 10,
             limit: int = 50
     ) -> List[Dict[str, Any]]:
-        """Получение топ-игроков по категории"""
         valid_categories = ['pts', 'reb', 'ast', 'net_rating']
         if category not in valid_categories:
             category = 'pts'
@@ -463,7 +455,6 @@ class PlayerService:
                 {"min_games": min_games}
             ).fetchall()
 
-            # Сортируем по значению
             players_list = []
             for row in result:
                 player_data = dict(row._mapping)
@@ -480,7 +471,6 @@ class PlayerService:
                     "season": player_data.get("season")
                 })
 
-            # Сортируем по значению
             players_list.sort(key=lambda x: x.get("value", 0), reverse=True)
 
             return players_list[:limit]

@@ -10,7 +10,6 @@ from middleware.auth import require_admin_or_operator, require_admin, get_curren
 
 router = APIRouter()
 
-# Роты со слешем и без для обратной совместимости
 @router.get("", response_model=List[schemas.TeamResponse])
 @router.get("/", response_model=List[schemas.TeamResponse])
 async def get_all_teams(

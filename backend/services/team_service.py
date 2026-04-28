@@ -8,9 +8,7 @@ class TeamService:
     def __init__(self, db: Session):
         self.db = db
 
-    # services/team_service.py - в методе get_all_teams
     def get_all_teams(self, skip: int = 0, limit: int = 100):
-        """Получение всех команд"""
         try:
             query = """
                 WITH team_stats AS (
@@ -38,12 +36,13 @@ class TeamService:
                     t.city,
                     t.state,
                     t.year_founded as founded_year,
+                    t.conference as team_conference,  
                     td.arena,
                     td.arenacapacity as arena_capacity,
                     td.headcoach as head_coach,
                     td.generalmanager as general_manager,
                     td.owner,
-                    ts.team_conference as conference,
+                    ts.team_conference as stats_conference,  
                     ts.team_division as division,
                     ts.w as wins,
                     ts.l as losses,
@@ -64,8 +63,7 @@ class TeamService:
             teams = []
             for row in result:
                 team_data = dict(row._mapping)
-
-                conference = team_data.get('conference')
+                conference = team_data.get('stats_conference') or team_data.get('team_conference')
                 conference_id = 0
                 if conference == 'Eastern':
                     conference_id = 1
@@ -73,7 +71,7 @@ class TeamService:
                     conference_id = 2
 
                 teams.append({
-                    "id": team_data["id"],  # ID уже строка, оставляем как есть
+                    "id": team_data["id"],
                     "name": team_data["name"],
                     "abbrev": team_data["abbrev"],
                     "full_name": team_data["full_name"],
@@ -103,17 +101,12 @@ class TeamService:
 
         except Exception as e:
             self.db.rollback()
-            print(f"❌ Ошибка получения команд: {e}")
+            print(f"Ошибка получения команд: {e}")
             return []
 
-    # services/team_service.py
     def get_team_by_id(self, team_id: int) -> Optional[Dict]:
-        """Получение команды по ID"""
         try:
-            # Приводим team_id к строке, так как в БД team.id - TEXT
             team_id_str = str(team_id)
-
-            # Сначала пробуем получить из таблицы team
             query = """
                 SELECT 
                     t.id,
@@ -122,7 +115,8 @@ class TeamService:
                     t.nickname,
                     t.city,
                     t.state,
-                    t.year_founded as founded_year
+                    t.year_founded as founded_year,
+                    t.conference as team_conference
                 FROM team t
                 WHERE t.id = :team_id
             """
@@ -131,8 +125,8 @@ class TeamService:
 
             if result:
                 team_data = dict(result._mapping)
+                team_conference = team_data.get('team_conference')
 
-                # Получаем статистику команды из team_info_common
                 stats_query = """
                     SELECT 
                         w, l, pct, pts_pg, opp_pts_pg, reb_pg, ast_pg,
@@ -158,7 +152,7 @@ class TeamService:
 
                 if stats:
                     stats_data = dict(stats._mapping)
-                    conference = stats_data.get('conference')
+                    conference = stats_data.get('conference') or team_conference
                     division = stats_data.get('division')
                     wins = stats_data.get('w', 0) or 0
                     losses = stats_data.get('l', 0) or 0
@@ -167,8 +161,9 @@ class TeamService:
                     points_against = float(stats_data.get('opp_pts_pg', 0) or 0)
                     rebounds_per_game = float(stats_data.get('reb_pg', 0) or 0)
                     assists_per_game = float(stats_data.get('ast_pg', 0) or 0)
+                else:
+                    conference = team_conference
 
-                # Получаем детали команды из team_details
                 details_query = """
                     SELECT arena, arenacapacity as arena_capacity, headcoach as head_coach,
                            generalmanager as general_manager, owner
@@ -224,7 +219,6 @@ class TeamService:
                     "championships": 0
                 }
 
-            # Если нет в таблице team, пробуем получить из game
             game_query = """
                 SELECT 
                     CASE 
@@ -279,13 +273,12 @@ class TeamService:
 
         except Exception as e:
             self.db.rollback()
-            print(f"❌ Ошибка получения команды по ID {team_id}: {e}")
+            print(f"Ошибка получения команды по ID {team_id}: {e}")
             import traceback
             traceback.print_exc()
             return None
 
     def get_team_by_name(self, name: str) -> Optional[Dict]:
-        """Получение команды по названию"""
         try:
             query = """
                 SELECT id, full_name as name, abbreviation as abbrev
@@ -299,13 +292,11 @@ class TeamService:
                 return dict(result._mapping)
             return None
         except Exception as e:
-            print(f"❌ Ошибка получения команды по названию: {e}")
+            print(f"Ошибка получения команды по названию: {e}")
             return None
 
     def create_team(self, team_data, user_id: int):
-        """Создание новой команды"""
         try:
-            # Проверяем, существует ли таблица team
             check_table = self.db.execute(text("""
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables 
@@ -314,10 +305,7 @@ class TeamService:
             """)).scalar()
 
             if not check_table:
-                # Если таблицы нет, создаем запись в game
                 return self._create_team_in_game(team_data, user_id)
-
-            # Вставляем в таблицу team
             result = self.db.execute(
                 text("""
                     INSERT INTO team (full_name, abbreviation, nickname, city, state, year_founded)
@@ -340,17 +328,15 @@ class TeamService:
 
         except Exception as e:
             self.db.rollback()
-            print(f"❌ Ошибка создания команды: {e}")
+            print(f"Ошибка создания команды: {e}")
             raise
 
     def _create_team_in_game(self, team_data, user_id: int):
-        """Создание команды в таблице game (если нет таблицы team)"""
-        # Генерируем ID (можно использовать существующий максимальный ID + 1)
         max_id = self.db.execute(text("SELECT COALESCE(MAX(team_id_home), 0) FROM game")).scalar()
         max_id = max(max_id, self.db.execute(text("SELECT COALESCE(MAX(team_id_away), 0) FROM game")).scalar())
         new_id = max_id + 1
 
-        # Создаем фиктивный матч для регистрации команды
+        # Создаем пустой матч для регистрации команды
         result = self.db.execute(
             text("""
                 INSERT INTO game (game_id, team_id_home, team_abbreviation_home, team_name_home, game_date)
@@ -375,14 +361,11 @@ class TeamService:
         }
 
     def update_team(self, team_id: int, team_data, user_id: int):
-        """Обновление команды"""
         try:
-            # Проверяем существование команды
             team = self.get_team_by_id(team_id)
             if not team:
                 raise ValueError(f"Team with id {team_id} not found")
 
-            # Обновляем в таблице team
             update_fields = []
             params = {"team_id": team_id}
 
@@ -404,9 +387,7 @@ class TeamService:
                 self.db.execute(text(query), params)
                 self.db.commit()
 
-            # Обновляем в team_details если есть
             if team_data.arena is not None or team_data.head_coach is not None:
-                # Проверяем существование записи
                 exists = self.db.execute(
                     text("SELECT 1 FROM team_details WHERE team_id = :team_id"),
                     {"team_id": team_id}
@@ -427,7 +408,6 @@ class TeamService:
                         query = f"UPDATE team_details SET {', '.join(update_details)} WHERE team_id = :team_id"
                         self.db.execute(text(query), params)
                 else:
-                    # Создаем новую запись
                     self.db.execute(
                         text("""
                             INSERT INTO team_details (team_id, arena, headcoach, generalmanager, owner)
@@ -447,18 +427,15 @@ class TeamService:
 
         except Exception as e:
             self.db.rollback()
-            print(f"❌ Ошибка обновления команды: {e}")
+            print(f"Ошибка обновления команды: {e}")
             raise
 
     def delete_team(self, team_id: int, user_id: int):
-        """Удаление команды"""
         try:
-            # Проверяем существование команды
             team = self.get_team_by_id(team_id)
             if not team:
                 raise ValueError(f"Team with id {team_id} not found")
 
-            # Проверяем, есть ли матчи с этой командой
             matches_count = self.db.execute(
                 text("""
                     SELECT COUNT(*) FROM game 
@@ -469,14 +446,10 @@ class TeamService:
 
             if matches_count > 0:
                 raise ValueError(f"Cannot delete team with {matches_count} existing games")
-
-            # Удаляем из team_details
             self.db.execute(
                 text("DELETE FROM team_details WHERE team_id = :team_id"),
                 {"team_id": team_id}
             )
-
-            # Удаляем из team
             self.db.execute(
                 text("DELETE FROM team WHERE id = :team_id"),
                 {"team_id": team_id}
@@ -487,5 +460,5 @@ class TeamService:
 
         except Exception as e:
             self.db.rollback()
-            print(f"❌ Ошибка удаления команды: {e}")
+            print(f"Ошибка удаления команды: {e}")
             raise

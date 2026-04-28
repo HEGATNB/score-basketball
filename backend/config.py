@@ -40,7 +40,7 @@ class Config:
         raise ValueError("JWT_SECRET must be set in production!")
     elif not JWT_SECRET:
         JWT_SECRET = secrets.token_urlsafe(32)
-        print("⚠️  WARNING: Using generated JWT secret. Set JWT_SECRET in env for production!")
+        print("WARNING: Using generated JWT secret. Set JWT_SECRET in env for production!")
 
     JWT_EXPIRES_IN = os.getenv("JWT_EXPIRES_IN", "7d")
 

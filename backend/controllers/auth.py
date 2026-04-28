@@ -1,4 +1,3 @@
-# backend/controllers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -21,10 +20,9 @@ async def login(
         request: Request,
         db: Session = Depends(get_db)
 ):
-    """Вход в систему - принимает JSON с любыми полями"""
     try:
         body = await request.json()
-        print(f"📥 Получен запрос на логин: {body}")
+        print(f"Получен запрос на логин: {body}")
 
         identifier = body.get("identifier") or body.get("email")
         password = body.get("password")
@@ -34,8 +32,8 @@ async def login(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Необходимо указать email/identifier и пароль"
             )
+        # Ограничение запросов
 
-        # Rate limiting - защита от брутфорса
         client_ip = request.client.host if request.client else "unknown"
         rate_key = f"login:{client_ip}:{identifier}"
         is_allowed, remaining, reset_time = redis_service.check_rate_limit(rate_key, limit=5, period=300)
@@ -46,12 +44,13 @@ async def login(
                 detail=f"Слишком много попыток входа. Попробуйте через {reset_time} секунд"
             )
 
-        print(f"🔑 Попытка входа с identifier: {identifier}")
+        print(f"Попытка входа с identifier: {identifier}")
 
         service = AuthService(db)
         user = None
 
         # Поиск пользователя
+
         if "@" in identifier:
             user = service.authenticate_user(identifier, password)
         else:
@@ -76,7 +75,7 @@ async def login(
                     }
 
         if not user:
-            print(f"❌ Неудачная попытка входа для {identifier}")
+            print(f"Неудачная попытка входа для {identifier}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Неверный email/имя или пароль",
@@ -88,24 +87,17 @@ async def login(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Пользователь заблокирован"
             )
-
-        # Сброс rate limiting при успешном входе
         redis_service.reset_rate_limit(rate_key)
-
-        # Создание токена с временем выдачи
         payload = TokenPayload(
             user_id=user["id"],
             email=user["email"],
             role=user["role"]
         )
         token = generate_token(payload)
-
-        # Сохраняем сессию в Redis
         redis_service.save_user_session(user["id"], token)
 
-        print(f"✅ Токен создан для {user['email']}")
+        print(f"Токен создан для {user['email']}")
 
-        # Логирование
         try:
             audit = AuditService(db)
             audit.log(
@@ -116,7 +108,7 @@ async def login(
                 ip_address=request.client.host if request.client else None
             )
         except Exception as e:
-            print(f"⚠️ Ошибка логирования: {e}")
+            print(f"Ошибка логирования: {e}")
 
         user_response = schemas.UserResponse(
             id=user["id"],
@@ -135,7 +127,7 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Ошибка в login: {e}")
+        print(f"Ошибка в login: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -146,7 +138,6 @@ async def login(
 
 @router.post("/logout")
 async def logout(request: Request, db: Session = Depends(get_db)):
-    """Выход из системы - добавляет токен в черный список"""
     from middleware.auth import get_current_user
 
     try:
@@ -155,19 +146,20 @@ async def logout(request: Request, db: Session = Depends(get_db)):
 
         if token and redis_service.is_available():
             # Получаем время жизни токена
+
             try:
                 payload = jwt.decode(token, config.JWT_SECRET, algorithms=["HS256"], options={"verify_exp": False})
                 exp = payload.get("exp", 0)
                 iat = payload.get("iat", 0)
                 expires_in = max(exp - int(datetime.now().timestamp()), 0)
-
                 # Добавляем токен в черный список
+
                 if expires_in > 0:
                     redis_service.blacklist_token(token, expires_in)
-                    print(f"✅ Токен добавлен в черный список, истекает через {expires_in} сек")
+                    print(f"Токен добавлен в черный список, истекает через {expires_in} сек")
             except Exception as e:
-                print(f"⚠️ Ошибка при получении expiration: {e}")
-                redis_service.blacklist_token(token, 604800)  # 7 дней по умолчанию
+                print(f"Ошибка при получении expiration: {e}")
+                redis_service.blacklist_token(token, 604800) # 7 дней
 
         if user_data:
             try:
@@ -180,18 +172,17 @@ async def logout(request: Request, db: Session = Depends(get_db)):
                     ip_address=request.client.host if request.client else None
                 )
             except Exception as e:
-                print(f"⚠️ Ошибка логирования выхода: {e}")
-            print(f"👋 Выход пользователя {user_data.user_id}")
+                print(f"Ошибка логирования выхода: {e}")
+            print(f"Выход пользователя {user_data.user_id}")
 
         return {"message": "Выход выполнен успешно"}
     except Exception as e:
-        print(f"❌ Ошибка в logout: {e}")
+        print(f"Ошибка в logout: {e}")
         return {"message": "Выход выполнен успешно"}
 
 
 @router.post("/logout-all")
 async def logout_all_devices(request: Request, db: Session = Depends(get_db)):
-    """Выход из всех устройств - отзывает все токены пользователя"""
     from middleware.auth import get_current_user
 
     user_data = await get_current_user(request)
@@ -202,10 +193,9 @@ async def logout_all_devices(request: Request, db: Session = Depends(get_db)):
         )
 
     # Отзываем все токены пользователя
+
     if redis_service.is_available():
         redis_service.revoke_all_user_tokens(user_data.user_id)
-
-    # Логируем
     try:
         audit = AuditService(db)
         audit.log(
@@ -216,7 +206,7 @@ async def logout_all_devices(request: Request, db: Session = Depends(get_db)):
             ip_address=request.client.host if request.client else None
         )
     except Exception as e:
-        print(f"⚠️ Ошибка логирования: {e}")
+        print(f"Ошибка логирования: {e}")
 
     return {"message": "Вы вышли из всех устройств"}
 
@@ -226,34 +216,33 @@ async def get_current_user_info(
         request: Request,
         db: Session = Depends(get_db)
 ):
-    """Получение информации о текущем пользователе"""
     from middleware.auth import get_current_user
 
     try:
-        print("🔍 Запрос информации о текущем пользователе")
+        print("Запрос информации о текущем пользователе")
         user_data = await get_current_user(request)
 
         if not user_data:
-            print("❌ Пользователь не авторизован")
+            print("Пользователь не авторизован")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Не авторизован",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        print(f"✅ Токен валиден. User ID: {user_data.user_id}")
+        print(f"Токен валиден. User ID: {user_data.user_id}")
 
         service = AuthService(db)
         user = service.get_user_by_id(user_data.user_id)
 
         if not user:
-            print(f"❌ Пользователь с ID {user_data.user_id} не найден в БД")
+            print(f"Пользователь с ID {user_data.user_id} не найден в БД")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пользователь не найден"
             )
 
-        print(f"✅ Информация о пользователе получена: {user['email']}")
+        print(f"Информация о пользователе получена: {user['email']}")
 
         return schemas.UserResponse(
             id=user["id"],
@@ -266,7 +255,7 @@ async def get_current_user_info(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Ошибка в me: {e}")
+        print(f"Ошибка в me: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -274,17 +263,14 @@ async def get_current_user_info(
             detail="Внутренняя ошибка сервера"
         )
 
-
-# Остальные методы (register, init) остаются без изменений
 @router.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
         request: Request,
         db: Session = Depends(get_db)
 ):
-    """Регистрация нового пользователя"""
     try:
         body = await request.json()
-        print(f"📥 Получен запрос на регистрацию: {body}")
+        print(f"Получен запрос на регистрацию: {body}")
 
         email = body.get("email")
         password = body.get("password")
@@ -324,9 +310,9 @@ async def register(
                 ip_address=request.client.host if request.client else None
             )
         except Exception as e:
-            print(f"⚠️ Ошибка логирования: {e}")
+            print(f"Ошибка логирования: {e}")
 
-        print(f"✅ Пользователь зарегистрирован: {user['email']}")
+        print(f"Пользователь зарегистрирован: {user['email']}")
 
         return schemas.UserResponse(
             id=user["id"],
@@ -339,7 +325,7 @@ async def register(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Ошибка в register: {e}")
+        print(f"Ошибка в register: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(
@@ -350,18 +336,17 @@ async def register(
 
 @router.post("/init")
 async def init_database(db: Session = Depends(get_db)):
-    """Инициализация базы данных тестовыми пользователями"""
     try:
-        print("🚀 Инициализация базы данных тестовыми пользователями")
+        print("Инициализация базы данных тестовыми пользователями")
         service = AuthService(db)
         result = service.init_database()
-        print(f"✅ Инициализация завершена: {result}")
+        print(f"Инициализация завершена: {result}")
         return {
             "message": "База данных инициализирована",
             "created_users": result.get("created_users", [])
         }
     except Exception as e:
-        print(f"❌ Ошибка в init: {e}")
+        print(f"Ошибка в init: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(

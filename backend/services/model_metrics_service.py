@@ -1,18 +1,14 @@
-# services/model_metrics_service.py
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import json
-
-
 class ModelMetricsService:
     def __init__(self, db: Session):
         self.db = db
         self._create_table_if_not_exists()
 
     def _create_table_if_not_exists(self):
-        """Создает таблицу model_metrics если её нет"""
         try:
             self.db.execute(text("""
                 CREATE TABLE IF NOT EXISTS model_metrics (
@@ -43,7 +39,6 @@ class ModelMetricsService:
                      features_count: int = None, training_duration_seconds: float = None,
                      status: str = "completed", error_message: str = None,
                      metadata: Dict = None) -> Dict[str, Any]:
-        """Сохраняет метрики модели в БД"""
         try:
             metadata_json = json.dumps(metadata) if metadata else None
 
@@ -87,7 +82,6 @@ class ModelMetricsService:
             return None
 
     def get_latest_metrics(self) -> Optional[Dict[str, Any]]:
-        """Получает последние метрики модели"""
         try:
             result = self.db.execute(
                 text("""
@@ -112,7 +106,6 @@ class ModelMetricsService:
             return None
 
     def get_metrics_history(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Получает историю метрик модели"""
         try:
             result = self.db.execute(
                 text("""
@@ -139,7 +132,6 @@ class ModelMetricsService:
             return []
 
     def get_model_stats(self) -> Dict[str, Any]:
-        """Получает статистику по моделям"""
         try:
             stats = self.db.execute(
                 text("""
