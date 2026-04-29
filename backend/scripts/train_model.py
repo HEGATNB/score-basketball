@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, regularizers, callbacks
 from sklearn.preprocessing import StandardScaler
 import pickle
 import os
@@ -95,6 +95,7 @@ def get_db_connection():
     - metadata: дополнительные метаданные в формате JSON
     '''
 
+
 def save_model_metrics_to_db(
         model_version: str,
         training_games_count: int,
@@ -144,8 +145,6 @@ def save_model_metrics_to_db(
 
         metadata['alpha'] = ALPHA
         metadata['weight_decay_days'] = WEIGHT_DECAY_DAYS
-        metadata['epochs'] = 30
-        metadata['batch_size'] = 64
 
         # Вставляем запись
         cursor.execute("""
@@ -181,13 +180,14 @@ def save_model_metrics_to_db(
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"✅ Metrics saved to DB: validation_accuracy={validation_accuracy:.4f}")
+        print(f"Метрики сохранены в БД: validation_accuracy={validation_accuracy:.4f}")
         return True
     except Exception as e:
-        print(f"❌ Error saving metrics: {e}")
+        print(f"Ошибка сохранения метрик: {e}")
         import traceback
         traceback.print_exc()
         return False
+
 
 # Парсер дат
 
@@ -231,6 +231,7 @@ def safe_parse_date(date_val):
     Возвращает DataFrame с играми, отсортированными по дате
     '''
 
+
 def load_games():
     conn = get_db_connection()
 
@@ -249,11 +250,6 @@ def load_games():
     conn.close()
 
     print(f"Размер фрейма данных: {df.shape}")
-
-    print("\nПервые 5 значений game_date:")
-    sample_dates = df['game_date'].head()
-    for i, val in enumerate(sample_dates):
-        print(f"  {i}: '{val}' (тип: {type(val)})")
 
     df['game_date_parsed'] = df['game_date'].apply(safe_parse_date)
     success_count = df['game_date_parsed'].notna().sum()
@@ -284,6 +280,7 @@ def load_games():
     Используется для инициализации EMA новых команд
     '''
 
+
 def compute_global_averages(df):
     global_avg = {}
     for stat in STATS:
@@ -313,6 +310,7 @@ def compute_global_averages(df):
     для каждой команды и целевую переменную (победа хозяев: 1/0)
     '''
 
+
 def preprocess_and_build_dataset(df):
     print("Предобработка данных...")
 
@@ -331,7 +329,6 @@ def preprocess_and_build_dataset(df):
             df[away_col] = 0
 
     global_avg = compute_global_averages(df)
-    print(f"Глобальные средние: {global_avg}")
 
     features = []
     targets = []
@@ -340,7 +337,6 @@ def preprocess_and_build_dataset(df):
     team_emas = {}
 
     last_date = df['game_date'].max()
-    print(f"Последняя дата в данных: {last_date}")
 
     print("Построение сета данных...")
     total_games = len(df)
@@ -407,26 +403,65 @@ def preprocess_and_build_dataset(df):
 
     return X, y, weights, team_emas, game_dates
 
+#Раздельная Z-нормализация для домашних и гостевых команд
+def normalize_features_separate(X_train, X_val):
+    n_stats = len(STATS)
+
+    # Разделение признаков на домашние и гостевые
+    X_train_home = X_train[:, :n_stats]
+    X_train_away = X_train[:, n_stats:]
+    X_val_home = X_val[:, :n_stats]
+    X_val_away = X_val[:, n_stats:]
+
+    scaler_home = StandardScaler()
+    scaler_away = StandardScaler()
+
+    # Нормализация
+    X_train_home_scaled = scaler_home.fit_transform(X_train_home)
+    X_train_away_scaled = scaler_away.fit_transform(X_train_away)
+
+    X_val_home_scaled = scaler_home.transform(X_val_home)
+    X_val_away_scaled = scaler_away.transform(X_val_away)
+
+    # Обьединение признаков
+    X_train_scaled = np.hstack([X_train_home_scaled, X_train_away_scaled])
+    X_val_scaled = np.hstack([X_val_home_scaled, X_val_away_scaled])
+
+    return X_train_scaled, X_val_scaled, scaler_home, scaler_away
+
     '''    
     Создает нейронную сеть для бинарной классификации
 
     Архитектура:
     - Входной слой: input_dim нейронов
-    - Скрытые слои: 64 -> 32 -> 16 нейронов (ReLU)
-    - Dropout для предотвращения переобучения (30%)
+    - Скрытые слои: 128 -> 64 -> 32 -> 16 нейронов (ReLU)
+    - BatchNormalization для стабильности
+    - Dropout для предотвращения переобучения
     - Выходной слой: 1 нейрон (sigmoid для вероятности)
     '''
 
+
 def build_model(input_dim):
     model = keras.Sequential([
-        layers.Dense(64, activation='relu', input_shape=(input_dim,)),
+        layers.Dense(128, activation='relu', input_shape=(input_dim,),
+                     kernel_regularizer=regularizers.l2(0.001)),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
+        layers.Dense(64, activation='relu',
+                     kernel_regularizer=regularizers.l2(0.001)),
+        layers.BatchNormalization(),
         layers.Dropout(0.3),
         layers.Dense(32, activation='relu'),
-        layers.Dropout(0.3),
+        layers.Dropout(0.2),
         layers.Dense(16, activation='relu'),
+        layers.Dropout(0.2),
         layers.Dense(1, activation='sigmoid')
     ])
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy',
+        metrics=['accuracy', keras.metrics.AUC(name='auc')]
+    )
     return model
 
     ''' 
@@ -442,7 +477,8 @@ def build_model(input_dim):
     7. Сохранение метрик в базу данных
     '''
 
-def train_model(db_path=None):
+
+def train_model():
     start_time = time.time()
     print("Запуск обучения модели")
 
@@ -465,43 +501,66 @@ def train_model(db_path=None):
         print(f"Обучающая выборка: {len(X_train)} примеров")
         print(f"Валидационная выборка: {len(X_val)} примеров")
 
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
+        # Раздельная Z-нормализация
+        X_train_scaled, X_val_scaled, scaler_home, scaler_away = normalize_features_separate(X_train, X_val)
 
         model = build_model(X.shape[1])
         model.summary()
+
+        early_stopping = callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=15,
+            restore_best_weights=True,
+            verbose=0
+        )
+
+        reduce_lr = callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-6,
+            verbose=0
+        )
 
         print("Начало обучения...")
         history = model.fit(
             X_train_scaled, y_train,
             sample_weight=w_train,
             validation_data=(X_val_scaled, y_val, w_val),
-            epochs=30,
+            epochs=100,
             batch_size=64,
+            callbacks=[early_stopping, reduce_lr],
             verbose=1
         )
 
-        # Оценка на валидационной выборке
-        val_loss, val_acc = model.evaluate(X_val_scaled, y_val, sample_weight=w_val, verbose=0)
+        # Оценка на валидационной(частичной) выборке
+        val_loss, val_acc, val_auc = model.evaluate(X_val_scaled, y_val, sample_weight=w_val, verbose=0)
         print(f"Точность валидации: {val_acc:.4f}")
+        print(f"AUC валидации: {val_auc:.4f}")
 
         # Оценка на обучающей выборке
-        train_loss, train_acc = model.evaluate(X_train_scaled, y_train, sample_weight=w_train, verbose=0)
+
+        train_loss, train_acc, train_auc = model.evaluate(X_train_scaled, y_train, sample_weight=w_train, verbose=0)
         print(f"Точность обучения: {train_acc:.4f}")
+        print(f"Разница Accuracy (train-val): {train_acc - val_acc:.4f}")
 
         # Сохраняем модель и артефакты
+
         model_path = os.path.join(MODEL_DIR, "model.h5")
-        scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
+        scaler_home_path = os.path.join(MODEL_DIR, "scaler_home.pkl")
+        scaler_away_path = os.path.join(MODEL_DIR, "scaler_away.pkl")
         emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
 
         model.save(model_path)
-        with open(scaler_path, "wb") as f:
-            pickle.dump(scaler, f)
+        with open(scaler_home_path, "wb") as f:
+            pickle.dump(scaler_home, f)
+        with open(scaler_away_path, "wb") as f:
+            pickle.dump(scaler_away, f)
         with open(emas_path, "wb") as f:
             pickle.dump(team_emas, f)
 
         # Сохраняем информацию о командах
+
         conn = get_db_connection()
         teams_df = pd.read_sql_query("""
             SELECT DISTINCT 
@@ -524,7 +583,7 @@ def train_model(db_path=None):
         # Сохраняем метрики в базу данных
 
         save_model_metrics_to_db(
-            model_version="1.0.0",
+            model_version="2.0.0",
             training_games_count=len(X_train),
             accuracy=float(train_acc),
             loss=float(train_loss),
@@ -539,23 +598,23 @@ def train_model(db_path=None):
                 "alpha": ALPHA,
                 "weight_decay_days": WEIGHT_DECAY_DAYS,
                 "epochs_completed": len(history.history['loss']),
-                "final_train_loss": float(history.history['loss'][-1]),
-                "final_val_loss": float(history.history['val_loss'][-1])
+                "train_auc": float(train_auc),
+                "val_auc": float(val_auc),
+                "overfitting_gap": float(train_acc - val_acc)
             }
         )
 
         print(f"Модель и артефакты сохранены в {MODEL_DIR}")
-        return model, scaler, team_emas
+        return model, (scaler_home, scaler_away), team_emas
 
     except Exception as e:
-        # В случае ошибки сохраняем информацию об ошибке
         training_duration = time.time() - start_time
         error_msg = str(e)
         print(f"Ошибка при обучении модели: {error_msg}")
 
         try:
             save_model_metrics_to_db(
-                model_version="1.0.0",
+                model_version="2.0.0",
                 training_games_count=0,
                 accuracy=0.0,
                 loss=0.0,
