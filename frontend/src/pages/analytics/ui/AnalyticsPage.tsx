@@ -1,5 +1,3 @@
-
-
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Cpu, Radar, Target } from 'lucide-react';
 import { apiRequest, type Match, type Player, type Team } from '@/shared/api/client';
