@@ -3,7 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './app/Layout';
 import { ProtectedRoute } from './app/ProtectedRoute';
 import { AuthProvider } from './app/providers/AuthProvider';
-import { LanguageProvider } from './providers/LanguageProvider';
+import { LanguageProvider } from './app/providers/LanguageProvider';
 import { HomePage } from './pages/home/ui/HomePage';
 import { LoadingSpinner } from './shared/ui/LoadingSpinner';
 
