@@ -1,6 +1,5 @@
-// src/shared/ui/LanguageToggle.tsx
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLanguage } from '@/app/providers/LanguageProvider';
+import { useLanguage } from '../../app/providers/LanguageProvider';
 
 export const LanguageToggle = () => {
   const { language, toggleLanguage } = useLanguage();
