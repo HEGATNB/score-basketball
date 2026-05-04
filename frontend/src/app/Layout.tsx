@@ -1,3 +1,4 @@
+// src/app/Layout.tsx - Updated header section
 import { Outlet, NavLink } from 'react-router-dom';
 import {
   BarChart3,
@@ -16,6 +17,8 @@ import { Footer } from '../shared/ui/Footer';
 import { useAuth } from './providers/AuthProvider';
 import { BrandLogo } from '@/shared/ui/BrandLogo';
 import { CookieAccept } from '../shared/ui/CookieAccept';
+import { LanguageToggle } from '@/shared/ui/LanguageToggle';
+import { useLanguage } from './providers/LanguageProvider';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
@@ -29,6 +32,7 @@ const navItems = [
 
 export const Layout = () => {
   const { user, logout, isAdmin } = useAuth();
+  const { t } = useLanguage();
   const displayName = user?.name || user?.username || 'Guest';
 
   return (
@@ -51,15 +55,18 @@ export const Layout = () => {
                 </NavLink>
                 <div className="hidden lg:block">
                   <p className="max-w-[220px] text-[10px] uppercase tracking-[0.24em] text-[var(--text-soft)]">
-                    Basketball Intelligence For Matchups, History And Live Prediction Ops
+                    {t('header.tagline')}
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                <LanguageToggle />
+
+                {/* Live Data Sync indicator */}
                 <div className="badge-live">
                   <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_18px_rgba(232,161,67,0.36)]" />
-                  Live Data Sync
+                  {t('header.liveData')}
                 </div>
 
                 {user ? (
@@ -74,7 +81,7 @@ export const Layout = () => {
                     <button
                       onClick={logout}
                       className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,246,229,0.03)] p-2 text-[var(--text-muted)] transition hover:border-[rgba(232,161,67,0.22)] hover:bg-[rgba(232,161,67,0.08)] hover:text-[var(--accent-soft)]"
-                      title="Logout"
+                      title={t('nav.logout')}
                     >
                       <LogOut className="h-4 w-4" />
                     </button>
@@ -85,7 +92,7 @@ export const Layout = () => {
                     className="btn-secondary px-4 py-2"
                   >
                     <LogIn className="h-4 w-4" />
-                    Sign In
+                    {t('nav.signIn')}
                   </NavLink>
                 )}
               </div>
@@ -106,7 +113,7 @@ export const Layout = () => {
                     }
                   >
                     <item.icon className="h-4 w-4" />
-                    {item.label}
+                    {t(`nav.${item.label.toLowerCase().replace(/\s+/g, '')}`) || item.label}
                   </NavLink>
                 ))}
 
@@ -122,7 +129,7 @@ export const Layout = () => {
                     }
                   >
                     <Shield className="h-4 w-4" />
-                    Admin
+                    {t('nav.admin')}
                   </NavLink>
                 )}
               </nav>
