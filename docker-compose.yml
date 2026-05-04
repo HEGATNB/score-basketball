@@ -6,6 +6,9 @@
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # сертификаты из папки nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro  # монтируем конфиг
     depends_on:
       - backend
     networks:
@@ -28,8 +31,6 @@
     networks:
       - app_network
 
-  # Удаляем сервис db полностью или комментируем его
-
   backend:
     build: ./backend
     ports:
@@ -38,8 +39,7 @@
       - DB_NAME=nba
       - DB_USER=postgres
       - DB_PASSWORD=12345678
-      - DB_HOST=host.docker.internal  # Для Windows/Mac
-      # - DB_HOST=172.17.0.1  # Для Linux (раскомментируйте эту строку)
+      - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -57,7 +57,7 @@
       - backend_models:/app/models
       - backend_backups:/app/backups
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # Для Linux
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - app_network

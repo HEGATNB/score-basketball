@@ -534,6 +534,7 @@ def train_model():
         )
 
         # Оценка на валидационной(частичной) выборке
+
         val_loss, val_acc, val_auc = model.evaluate(X_val_scaled, y_val, sample_weight=w_val, verbose=0)
         print(f"Точность валидации: {val_acc:.4f}")
         print(f"AUC валидации: {val_auc:.4f}")
