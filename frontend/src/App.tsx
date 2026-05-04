@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './app/Layout';
 import { ProtectedRoute } from './app/ProtectedRoute';
 import { AuthProvider } from './app/providers/AuthProvider';
+import { LanguageProvider } from './providers/LanguageProvider';
 import { HomePage } from './pages/home/ui/HomePage';
 import { LoadingSpinner } from './shared/ui/LoadingSpinner';
 
@@ -22,55 +23,57 @@ const NotFoundPage = lazy(() => import('./pages/not-found/ui/NotFoundPage'));
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <Suspense fallback={<LoadingSpinner fullScreen />}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route index element={<HomePage />} />
-              <Route path="/teams" element={<TeamsPage />} />
-              <Route path="/teams/:teamId" element={<TeamPage />} />
-              <Route path="/players" element={<PlayersPage />} />
-              <Route path="/matches" element={<MatchesPage />} />
-              <Route path="/matches/:matchId" element={<MatchPage />} />
-              <Route
-                path="/prediction/new"
-                element={
-                  <ProtectedRoute>
-                    <PredictionNewPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/prediction/:id"
-                element={
-                  <ProtectedRoute>
-                    <PredictionResultPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/history"
-                element={
-                  <ProtectedRoute>
-                    <HistoryPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute roles={['admin']}>
-                    <AdminPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/auth" element={<AuthPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <Suspense fallback={<LoadingSpinner fullScreen />}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route index element={<HomePage />} />
+                <Route path="/teams" element={<TeamsPage />} />
+                <Route path="/teams/:teamId" element={<TeamPage />} />
+                <Route path="/players" element={<PlayersPage />} />
+                <Route path="/matches" element={<MatchesPage />} />
+                <Route path="/matches/:matchId" element={<MatchPage />} />
+                <Route
+                  path="/prediction/new"
+                  element={
+                    <ProtectedRoute>
+                      <PredictionNewPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/prediction/:id"
+                  element={
+                    <ProtectedRoute>
+                      <PredictionResultPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/history"
+                  element={
+                    <ProtectedRoute>
+                      <HistoryPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedRoute roles={['admin']}>
+                      <AdminPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/auth" element={<AuthPage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   );
 }
