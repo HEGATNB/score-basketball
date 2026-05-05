@@ -1,3 +1,4 @@
+// src/pages/home/ui/HomePage.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,20 +13,22 @@ import {
 } from 'lucide-react';
 import { apiRequest, type Match, type Prediction, type Team } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
 
 type HomeTab = 'overview' | 'schedule' | 'teams' | 'predictions';
 
-const tabs: Array<{ id: HomeTab; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'teams', label: 'Teams' },
-  { id: 'predictions', label: 'Predictions' },
+const tabs: Array<{ id: HomeTab; labelKey: string }> = [
+  { id: 'overview', labelKey: 'home.overview' },
+  { id: 'schedule', labelKey: 'home.schedule' },
+  { id: 'teams', labelKey: 'home.teams' },
+  { id: 'predictions', labelKey: 'home.predictions' },
 ];
 
 export const HomePage = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<HomeTab>('overview');
   const [teams, setTeams] = useState<Team[]>([]);
@@ -69,27 +72,27 @@ export const HomePage = () => {
   const summary = useMemo(
     () => [
       {
-        label: 'Accuracy',
+        labelKey: 'home.accuracy',
         value: `${Math.round(stats?.accuracy ?? 0)}%`,
-        detail: 'model validation',
+        detailKey: 'home.modelValidation',
         icon: Cpu,
       },
       {
-        label: 'Teams',
+        labelKey: 'home.teams',
         value: `${teams.length}`,
-        detail: 'tracked profiles',
+        detailKey: 'home.trackedProfiles',
         icon: Trophy,
       },
       {
-        label: 'Games',
+        labelKey: 'home.games',
         value: `${matches.length}`,
-        detail: 'loaded fixtures',
+        detailKey: 'home.loadedFixtures',
         icon: CalendarDays,
       },
       {
-        label: 'Samples',
+        labelKey: 'home.samples',
         value: `${stats?.totalTrainingData ?? 0}`,
-        detail: 'historical records',
+        detailKey: 'home.historicalRecords',
         icon: Activity,
       },
     ],
@@ -101,7 +104,7 @@ export const HomePage = () => {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-16 w-16 rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b] animate-spin" />
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Loading dashboard</p>
+          <p className="text-sm uppercase tracking-[0.24em] text-slate-400">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -114,32 +117,31 @@ export const HomePage = () => {
           <div className="flex flex-wrap items-center gap-2">
             <span className="data-chip">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Connected stack
+              {t('home.connected')}
             </span>
             <span className="data-chip">
               <Sparkles className="h-3.5 w-3.5" />
-              Live basketball workspace
+              {t('home.liveBasketball')}
             </span>
           </div>
 
           <div className="mt-5 max-w-3xl">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Dashboard</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('nav.dashboard')}</p>
             <h1 className="mt-2 font-spacegrotesk text-3xl font-bold text-white sm:text-4xl">
-              Cleaner match intelligence, less landing-page noise.
+              {t('home.title')}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-              The home screen now works more like a sports hub: key metrics first, current matchup second, and the rest
-              of the information split into clearer sections instead of one long decorative feed.
+              {t('home.subtitle')}
             </p>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <button onClick={() => navigate(user ? '/prediction/new' : '/auth')} className="btn-primary">
-              {user ? 'New prediction' : 'Sign in'}
+              {user ? t('home.newPrediction') : t('common.signIn')}
               <ArrowRight className="h-4 w-4" />
             </button>
             <button onClick={() => navigate('/matches')} className="btn-secondary">
-              Open schedule
+              {t('home.openSchedule')}
             </button>
           </div>
         </GlowingCard>
@@ -147,12 +149,12 @@ export const HomePage = () => {
         <GlowingCard glowColor="blue" className="p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Featured game</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('home.featuredGame')}</p>
               <h2 className="mt-2 text-2xl font-semibold text-white">
-                {featuredMatch ? `${featuredMatch.homeTeam.abbrev} vs ${featuredMatch.awayTeam.abbrev}` : 'No game loaded'}
+                {featuredMatch ? `${featuredMatch.homeTeam.abbrev} vs ${featuredMatch.awayTeam.abbrev}` : t('home.noGame')}
               </h2>
             </div>
-            <span className="data-chip">{featuredMatch?.status === 'finished' ? 'Final' : 'Preview'}</span>
+            <span className="data-chip">{featuredMatch?.status === 'finished' ? t('home.final') : t('home.preview')}</span>
           </div>
 
           {featuredMatch ? (
@@ -160,19 +162,19 @@ export const HomePage = () => {
               <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
                 <div className="surface-muted text-center">
                   <TeamMark team={featuredMatch.homeTeam} size="md" className="mx-auto" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{featuredMatch.homeTeam.city || 'Home'}</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{featuredMatch.homeTeam.city || t('common.home')}</p>
                   <p className="mt-2 text-lg font-semibold text-white">{featuredMatch.homeTeam.name}</p>
                   <p className="mt-3 text-3xl font-bold tabular-nums text-[#ecd8ab]">{featuredMatch.homeScore ?? '--'}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Tipoff</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('common.tipoff')}</p>
                   <p className="mt-2 text-sm font-medium text-slate-300">
                     {new Date(featuredMatch.date).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="surface-muted text-center">
                   <TeamMark team={featuredMatch.awayTeam} size="md" className="mx-auto" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{featuredMatch.awayTeam.city || 'Away'}</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{featuredMatch.awayTeam.city || t('common.away')}</p>
                   <p className="mt-2 text-lg font-semibold text-white">{featuredMatch.awayTeam.name}</p>
                   <p className="mt-3 text-3xl font-bold tabular-nums text-[#d6e1eb]">{featuredMatch.awayScore ?? '--'}</p>
                 </div>
@@ -180,7 +182,7 @@ export const HomePage = () => {
 
               <div className="surface-muted">
                 <div className="flex items-center justify-between text-sm text-slate-300">
-                  <span>Model confidence</span>
+                  <span>{t('home.modelConfidence')}</span>
                   <span className="tabular-nums">{Math.round(stats?.accuracy ?? 0)}%</span>
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/70">
@@ -192,19 +194,19 @@ export const HomePage = () => {
               </div>
             </div>
           ) : (
-            <p className="mt-6 text-sm text-slate-400">The next loaded fixture will appear here.</p>
+            <p className="mt-6 text-sm text-slate-400">{t('home.nextFixture')}</p>
           )}
         </GlowingCard>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summary.map((item) => (
-          <GlowingCard key={item.label} className="p-5">
+          <GlowingCard key={item.labelKey} className="p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t(item.labelKey)}</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{item.value}</p>
-                <p className="mt-2 text-sm text-slate-400">{item.detail}</p>
+                <p className="mt-2 text-sm text-slate-400">{t(item.detailKey)}</p>
               </div>
               <div className="rounded-lg border border-white/8 bg-white/[0.04] p-2.5 text-slate-200">
                 <item.icon className="h-4 w-4" />
@@ -222,7 +224,7 @@ export const HomePage = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`segmented-item ${activeTab === tab.id ? 'segmented-item-active' : ''}`}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </div>
@@ -230,24 +232,24 @@ export const HomePage = () => {
         {activeTab === 'overview' && (
           <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <GlowingCard glowColor="orange" className="p-6">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Notes</p>
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('home.notes')}</p>
               <div className="mt-4 grid gap-3">
                 <div className="surface-muted">
-                  <p className="text-sm font-semibold text-white">Prediction engine</p>
+                  <p className="text-sm font-semibold text-white">{t('home.predictionEngine')}</p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Historical sample size is stable and the prediction endpoint is responding through the live backend.
+                    {t('home.predictionEngineDesc')}
                   </p>
                 </div>
                 <div className="surface-muted">
-                  <p className="text-sm font-semibold text-white">Current schedule window</p>
+                  <p className="text-sm font-semibold text-white">{t('home.scheduleWindow')}</p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    {upcomingMatches.length} upcoming games and {recentMatches.length} finished games are available for browsing.
+                    {t('home.scheduleWindowDesc', { upcoming: upcomingMatches.length, recent: recentMatches.length })}
                   </p>
                 </div>
                 <div className="surface-muted">
-                  <p className="text-sm font-semibold text-white">Navigation cleanup</p>
+                  <p className="text-sm font-semibold text-white">{t('home.navigationCleanup')}</p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Instead of stacking everything vertically, the home page now separates schedule, team and prediction views into tabs.
+                    {t('home.navigationCleanupDesc')}
                   </p>
                 </div>
               </div>
@@ -256,11 +258,11 @@ export const HomePage = () => {
             <GlowingCard glowColor="green" className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Standings snapshot</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Top teams</h2>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('home.standingsSnapshot')}</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">{t('home.topTeams')}</h2>
                 </div>
                 <button onClick={() => navigate('/teams')} className="btn-secondary">
-                  Full standings
+                  {t('home.fullStandings')}
                 </button>
               </div>
 
@@ -276,7 +278,7 @@ export const HomePage = () => {
                       <TeamMark team={team} size="sm" />
                       <div>
                         <p className="text-sm font-semibold text-white">{team.name}</p>
-                        <p className="text-xs text-slate-400">{team.division?.name || 'Division'}</p>
+                        <p className="text-xs text-slate-400">{team.division?.name || t('teams.division')}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -296,11 +298,11 @@ export const HomePage = () => {
           <GlowingCard glowColor="blue" className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Schedule</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Recent and upcoming games</h2>
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('home.schedule')}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">{t('home.recentUpcoming')}</h2>
               </div>
               <button onClick={() => navigate('/matches')} className="btn-secondary">
-                All games
+                {t('home.allGames')}
               </button>
             </div>
 
@@ -335,11 +337,11 @@ export const HomePage = () => {
           <GlowingCard glowColor="green" className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Team board</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">League leaders</h2>
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('home.teamBoard')}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">{t('home.leagueLeaders')}</h2>
               </div>
               <button onClick={() => navigate('/teams')} className="btn-secondary">
-                Team index
+                {t('home.teamIndex')}
               </button>
             </div>
 
@@ -380,13 +382,13 @@ export const HomePage = () => {
           <GlowingCard glowColor="purple" className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Prediction lane</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('home.predictionLane')}</p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">
-                  {user ? 'Recent model runs' : 'Prediction workspace'}
+                  {user ? t('home.recentRuns') : t('home.predictionWorkspace')}
                 </h2>
               </div>
               <button onClick={() => navigate(user ? '/history' : '/auth')} className="btn-secondary">
-                {user ? 'History' : 'Sign in'}
+                {user ? t('home.history') : t('common.signIn')}
               </button>
             </div>
 
@@ -417,8 +419,8 @@ export const HomePage = () => {
               <div className="mt-5 rounded-[14px] border border-white/8 bg-white/[0.03] px-5 py-6">
                 <p className="text-sm leading-6 text-slate-300">
                   {user
-                    ? 'You have not saved any prediction runs yet. Start with a matchup and the result will appear here and in history.'
-                    : 'Sign in to save predictions, revisit results and compare model outputs over time.'}
+                    ? t('home.noPredictions')
+                    : t('home.signInPrompt')}
                 </p>
               </div>
             )}

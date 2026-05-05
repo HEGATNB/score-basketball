@@ -1,12 +1,15 @@
+// src/pages/history/ui/HistoryPage.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarRange, History, TrendingUp } from 'lucide-react';
 import { apiRequest, type Prediction } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 
 export const HistoryPage = () => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,13 +29,13 @@ export const HistoryPage = () => {
     return (
       <GlowingCard glowColor="purple" className="mx-auto max-w-3xl p-8 text-center">
         <History className="mx-auto h-10 w-10 text-[#ead9d1]" />
-        <h1 className="mt-5 text-3xl font-semibold text-white">Your history becomes available after sign-in.</h1>
-        <p className="mt-3 text-slate-300">Prediction history is tied to authenticated accounts and stored in the connected database.</p>
+        <h1 className="mt-5 text-3xl font-semibold text-white">{t('history.signInRequired')}</h1>
+        <p className="mt-3 text-slate-300">{t('history.signInDesc')}</p>
         <Link
           to="/auth"
           className="btn-primary mt-6"
         >
-          Sign in
+          {t('history.signIn')}
         </Link>
       </GlowingCard>
     );
@@ -52,24 +55,24 @@ export const HistoryPage = () => {
         <div className="flex flex-wrap items-center gap-3">
           <span className="data-chip">
             <TrendingUp className="h-3.5 w-3.5" />
-            Saved prediction runs
+            {t('history.savedRuns')}
           </span>
-          <span className="data-chip">{predictions.length} items</span>
+          <span className="data-chip">{t('history.items', { count: predictions.length })}</span>
         </div>
-        <h1 className="mt-5 text-4xl font-bold text-white">Your prediction history.</h1>
+        <h1 className="mt-5 text-4xl font-bold text-white">{t('history.title')}</h1>
         <p className="mt-4 text-base leading-7 text-slate-300">
-          Every run is tied to your account and available for quick review inside the app.
+          {t('history.subtitle')}
         </p>
       </GlowingCard>
 
       {predictions.length === 0 ? (
         <GlowingCard glowColor="blue" className="p-8 text-center">
-          <p className="text-white">You have not created any predictions yet.</p>
+          <p className="text-white">{t('history.noPredictions')}</p>
           <Link
             to="/prediction/new"
             className="mt-5 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
           >
-            Start a new run
+            {t('history.startNew')}
           </Link>
         </GlowingCard>
       ) : (

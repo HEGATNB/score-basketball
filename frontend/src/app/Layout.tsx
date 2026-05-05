@@ -1,4 +1,3 @@
-// src/app/Layout.tsx - Updated header section
 import { Outlet, NavLink } from 'react-router-dom';
 import {
   BarChart3,
@@ -21,13 +20,13 @@ import { LanguageToggle } from '@/shared/ui/LanguageToggle';
 import { useLanguage } from './providers/LanguageProvider';
 
 const navItems = [
-  { path: '/', icon: Home, label: 'Dashboard' },
-  { path: '/teams', icon: Trophy, label: 'Teams' },
-  { path: '/players', icon: Users, label: 'Players' },
-  { path: '/matches', icon: CalendarDays, label: 'Matches' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { path: '/prediction/new', icon: Cpu, label: 'Predict' },
-  { path: '/history', icon: History, label: 'History' },
+  { path: '/', icon: Home, labelKey: 'nav.dashboard' },
+  { path: '/teams', icon: Trophy, labelKey: 'nav.teams' },
+  { path: '/players', icon: Users, labelKey: 'nav.players' },
+  { path: '/matches', icon: CalendarDays, labelKey: 'nav.matches' },
+  { path: '/analytics', icon: BarChart3, labelKey: 'nav.analytics' },
+  { path: '/prediction/new', icon: Cpu, labelKey: 'nav.predict' },
+  { path: '/history', icon: History, labelKey: 'nav.history' },
 ];
 
 export const Layout = () => {
@@ -63,7 +62,6 @@ export const Layout = () => {
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <LanguageToggle />
 
-                {/* Live Data Sync indicator */}
                 <div className="badge-live">
                   <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_18px_rgba(232,161,67,0.36)]" />
                   {t('header.liveData')}
@@ -113,7 +111,7 @@ export const Layout = () => {
                     }
                   >
                     <item.icon className="h-4 w-4" />
-                    {t(`nav.${item.label.toLowerCase().replace(/\s+/g, '')}`) || item.label}
+                    {t(item.labelKey)}
                   </NavLink>
                 ))}
 
@@ -142,7 +140,7 @@ export const Layout = () => {
         </main>
 
         <Footer
-          copyrightText="© 2026 Score Team"
+          copyrightText={t('footer.copyright')}
           contactEmail="hegatnb@mail.ru"
           socialLinks={{
             telegram: "https://t.me/score_website",

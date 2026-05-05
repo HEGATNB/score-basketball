@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Sparkles, Users, X } from 'lucide-react';
 import { apiRequest, type Player } from '@/shared/api/client';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
@@ -46,6 +47,7 @@ function getPlayerSummary(player: Player) {
 }
 
 export default function PlayersPage() {
+  const { t } = useLanguage();
   const [players, setPlayers] = useState<Player[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -189,31 +191,32 @@ export default function PlayersPage() {
                 <Users className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-[rgba(236,216,171,0.72)]">Player cards</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-[rgba(236,216,171,0.72)]">{t('players.title')}</p>
                 <h1 className="mt-2 font-spacegrotesk text-3xl font-bold text-white sm:text-4xl">
-                  Player profiles with season switcher
+                  {t('players.title')}
                 </h1>
               </div>
             </div>
             <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base">
-              Click any card to open the full profile where you can switch between seasons.
+              {t('players.subtitle')}
             </p>
           </div>
           <div className="w-full max-w-[360px] space-y-5">
             <div>
-              <label className="text-xs uppercase tracking-[0.22em] text-slate-500">Search players</label>
+              <label className="text-xs uppercase tracking-[0.22em] text-slate-500">{t('players.searchPlaceholder')}</label>
               <div className="relative mt-3">
                 <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="LeBron, Curry, Jokic..."
+                  placeholder={t('players.searchPlaceholder')}
                   className="field-shell py-3 pl-12 pr-4"
+                  style={{ textIndent: '26px' }}
                 />
               </div>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">View</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('players.view')}</p>
               <div className="segmented-bar mt-3">
                 {(['cards', 'board'] as const).map((option) => (
                   <button
@@ -221,7 +224,7 @@ export default function PlayersPage() {
                     onClick={() => setView(option)}
                     className={`segmented-item ${view === option ? 'segmented-item-active' : ''}`}
                   >
-                    {option === 'cards' ? 'Cards' : 'Board'}
+                    {option === 'cards' ? t('players.cards') : t('players.board')}
                   </button>
                 ))}
               </div>
@@ -230,23 +233,23 @@ export default function PlayersPage() {
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Top scorer</p>
-            <p className="mt-2 text-base font-semibold text-white">{topScorer ? formatFullName(topScorer) : 'Unavailable'}</p>
-            <p className="mt-1 text-sm text-slate-400">{topScorer ? `${topScorer.points_per_game.toFixed(1)} PTS` : 'No data'}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('players.topScorer')}</p>
+            <p className="mt-2 text-base font-semibold text-white">{topScorer ? formatFullName(topScorer) : t('common.unavailable')}</p>
+            <p className="mt-1 text-sm text-slate-400">{topScorer ? `${topScorer.points_per_game.toFixed(1)} PTS` : t('teams.noData')}</p>
           </div>
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Top playmaker</p>
-            <p className="mt-2 text-base font-semibold text-white">{topPlaymaker ? formatFullName(topPlaymaker) : 'Unavailable'}</p>
-            <p className="mt-1 text-sm text-slate-400">{topPlaymaker ? `${topPlaymaker.assists_per_game.toFixed(1)} AST` : 'No data'}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('players.topPlaymaker')}</p>
+            <p className="mt-2 text-base font-semibold text-white">{topPlaymaker ? formatFullName(topPlaymaker) : t('common.unavailable')}</p>
+            <p className="mt-1 text-sm text-slate-400">{topPlaymaker ? `${topPlaymaker.assists_per_game.toFixed(1)} AST` : t('teams.noData')}</p>
           </div>
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Average scoring</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('players.averageScoring')}</p>
             <p className="mt-2 text-base font-semibold text-white">{averagePoints.toFixed(1)} PPG</p>
-            <p className="mt-1 text-sm text-slate-400">Across the current result set.</p>
+            <p className="mt-1 text-sm text-slate-400">{t('players.acrossSet')}</p>
           </div>
           <div className="surface-muted text-sm text-slate-300">
             <Sparkles className="mr-2 inline h-4 w-4 text-[#ddb36a]" />
-            Click any card to open profile with season switcher.
+            {t('players.clickPrompt')}
           </div>
         </div>
       </GlowingCard>
@@ -282,9 +285,9 @@ export default function PlayersPage() {
               </colgroup>
               <thead className="bg-white/[0.02]">
                 <tr className="border-b border-white/8">
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Player</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Team</th>
-                  <th className="px-5 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pos</th>
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('players.player')}</th>
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('players.team')}</th>
+                  <th className="px-5 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('players.position')}</th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">MIN</th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">PTS</th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">REB</th>
@@ -312,7 +315,7 @@ export default function PlayersPage() {
                               onClick={() => handleOpenProfile(player)}
                               className="mt-1 truncate text-left text-xs uppercase tracking-[0.16em] text-slate-500 transition hover:text-white"
                             >
-                              Open profile
+                              {t('players.openProfile')}
                             </button>
                           </div>
                         </div>
@@ -353,12 +356,12 @@ export default function PlayersPage() {
                         onClick={() => handleOpenProfile(player)}
                         className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500 transition hover:text-white"
                       >
-                        Open profile
+                        {t('players.openProfile')}
                       </button>
                     </div>
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-4">
-                    <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Team</span>
+                    <span className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('players.team')}</span>
                     <div className="flex items-center gap-3">
                       <TeamMark team={player.team} size="sm" />
                       <span className="truncate text-sm text-white">{player.team?.abbrev || player.team?.name || 'NBA'}</span>
@@ -366,7 +369,7 @@ export default function PlayersPage() {
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">POS</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('players.position')}</p>
                       <p className="mt-2 text-sm text-white">{player.position || 'N/A'}</p>
                     </div>
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
@@ -402,20 +405,20 @@ export default function PlayersPage() {
           <div className="h-full max-h-[90vh] w-full max-w-6xl overflow-auto" onClick={(e) => e.stopPropagation()}>
             <GlowingCard glowColor="orange" className="overflow-hidden p-0">
               <div className="border-b border-white/8 bg-gradient-to-r from-[rgba(201,106,43,0.08)] to-transparent px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Player profile</p>
-                    <h2 className="mt-1 text-2xl font-semibold text-white">Database-backed season snapshot</h2>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.22em] text-slate-500">{t('players.searchPlaceholder')}</label>
+                  <div className="relative mt-3">
+                    <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder={t('players.searchPlaceholder')}
+                      className="field-shell py-3 pl-4 pr-4"
+                      style={{ textIndent: '26px' }}
+                    />
                   </div>
-                  <button
-                    onClick={() => setSelectedPlayer(null)}
-                    className="rounded-xl border border-white/10 bg-white/[0.03] p-2 text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
                 </div>
               </div>
-
               <div className="grid gap-6 p-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                 <div>
                   <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
@@ -465,7 +468,7 @@ export default function PlayersPage() {
                       </p>
                     </div>
                     <div className="surface-muted text-center">
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Position</p>
+                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('players.position')}</p>
                       <p className="mt-2 text-lg font-semibold text-white">{selectedPlayer.position || 'N/A'}</p>
                     </div>
                     <div className="surface-muted text-center">

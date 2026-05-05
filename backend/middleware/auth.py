@@ -1,4 +1,3 @@
-# backend/middleware/auth.py
 from fastapi import Request, HTTPException, status
 from fastapi.security import HTTPBearer
 import sys
@@ -13,9 +12,8 @@ from config import config
 
 security = HTTPBearer()
 
-
+# Извлечь токен из заголовка
 def extract_token_from_request(request: Request) -> str | None:
-    """Извлекает токен из заголовка Authorization"""
     authorization = request.headers.get("Authorization")
     if not authorization:
         return None
@@ -23,49 +21,46 @@ def extract_token_from_request(request: Request) -> str | None:
         return None
     return authorization[7:]
 
-
+# Получить время заголовка из полезной нагрузки
 def get_token_issued_at(token: str) -> float | None:
-    """Извлекает время выдачи токена из payload"""
     try:
         payload = jwt.decode(token, config.JWT_SECRET, algorithms=["HS256"], options={"verify_exp": False})
         return payload.get("iat", None)
     except:
         return None
 
-
+# Получение пользователя из токена с проверкой ЧС
 async def get_current_user(request: Request):
-    """Получение текущего пользователя из токена с проверкой черного списка"""
     token = extract_token_from_request(request)
 
     if not token:
-        print("⚠️ Нет заголовка Authorization")
+        print("Нет заголовка Authorization")
         return None
 
-    print(f"🔑 Получен токен: {token[:20]}...")
+    print(f"Получен токен: {token[:20]}...")
 
-    # Проверка в черном списке Redis
+    # Проверка в черном списке
     if redis_service.is_available() and redis_service.is_token_blacklisted(token):
-        print("❌ Токен в черном списке")
+        print("Токен в черном списке")
         return None
 
     payload = verify_token(token)
 
     if not payload:
-        print("❌ Токен недействителен")
+        print("Токен недействителен")
         return None
 
     # Проверка, не были ли отозваны все токены пользователя
     iat = get_token_issued_at(token)
     if iat and redis_service.is_available() and redis_service.is_user_tokens_revoked(payload.user_id, iat):
-        print(f"❌ Токены пользователя {payload.user_id} были отозваны")
+        print(f"Токены пользователя {payload.user_id} были отозваны")
         return None
 
-    print(f"✅ Пользователь аутентифицирован: ID={payload.user_id}, Email={payload.email}")
+    print(f"Пользователь аутентифицирован: ID={payload.user_id}, Email={payload.email}")
     return payload
 
-
+# Проверка роли администратора
 async def require_admin(request: Request):
-    """Проверка роли admin"""
     user = await get_current_user(request)
     if not user:
         raise HTTPException(
@@ -82,7 +77,6 @@ async def require_admin(request: Request):
 
 
 async def require_admin_or_operator(request: Request):
-    """Проверка роли admin или operator"""
     user = await get_current_user(request)
     if not user:
         raise HTTPException(

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, Trophy } from 'lucide-react';
 import { apiRequest, type Team } from '@/shared/api/client';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { hexToRgba } from '@/shared/lib/teamBrand';
@@ -22,12 +23,9 @@ function formatRecord(team: Team) {
   return `${team.wins}-${team.losses}`;
 }
 
-function formatTeamMeta(team: Team) {
-  return `${team.city || 'Unknown city'} / ${team.division?.name || 'Division'}`;
-}
-
 export const TeamsPage = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -42,11 +40,16 @@ export const TeamsPage = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  const formatTeamMeta = (team: Team) => {
+    return `${team.city || 'Unknown city'} / ${team.division?.name || t('teams.division')}`;
+  };
+
   const filteredTeams = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return teams.filter((team) => {
-      const matchesConference = conference === 'all' || team.conference?.name === conference;
+      const teamConference = team.conference?.name || '';
+      const matchesConference = conference === 'all' || teamConference === conference;
       if (!matchesConference) {
         return false;
       }
@@ -99,40 +102,41 @@ export const TeamsPage = () => {
             <div className="flex flex-wrap items-center gap-3">
               <span className="data-chip">
                 <Trophy className="h-3.5 w-3.5" />
-                Team board
+                {t('teams.board')}
               </span>
-              <span className="data-chip">{teams.length} clubs loaded</span>
+              <span className="data-chip">{t('teams.clubsLoaded', { count: teams.length })}</span>
             </div>
 
             <h1 className="mt-4 max-w-3xl font-spacegrotesk text-3xl font-bold text-white sm:text-4xl">
-              Standings and team identity in one tighter board.
+              {t('teams.title')}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-              Compare teams quickly in standings view, then switch to cards when you want more visual detail.
+              {t('teams.subtitle')}
             </p>
           </div>
 
           <div className="space-y-5">
             <div>
-              <label className="text-xs uppercase tracking-[0.22em] text-slate-500">Search teams</label>
+              <label className="text-xs uppercase tracking-[0.22em] text-slate-500">{t('teams.searchTeams')}</label>
               <div className="relative mt-3">
-                <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Boston, Atlantic, BOS..."
+                  placeholder={t('teams.searchPlaceholder')}
                   className="field-shell py-3 pl-12 pr-4"
+                  style={{ textIndent: '26px' }}
                 />
               </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">View</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('teams.view')}</p>
                 <div className="segmented-bar mt-3">
                   {([
-                    ['standings', 'Standings'],
-                    ['cards', 'Cards'],
+                    ['standings', t('teams.standings')],
+                    ['cards', t('teams.cards')],
                   ] as Array<[TeamView, string]>).map(([option, label]) => (
                     <button
                       type="button"
@@ -147,12 +151,12 @@ export const TeamsPage = () => {
               </div>
 
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Conference</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('teams.conference')}</p>
                 <div className="segmented-bar mt-3">
                   {([
-                    ['all', 'All'],
-                    ['Eastern', 'East'],
-                    ['Western', 'West'],
+                    ['all', t('teams.all')],
+                    ['Eastern', t('teams.east')],
+                    ['Western', t('teams.west')],
                   ] as Array<[ConferenceFilter, string]>).map(([option, label]) => (
                     <button
                       type="button"
@@ -171,26 +175,26 @@ export const TeamsPage = () => {
 
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Top record</p>
-            <p className="mt-2 text-base font-semibold text-white">{teams[0]?.name || 'Unavailable'}</p>
-            <p className="mt-1 text-sm text-slate-400">{teams[0] ? `${teams[0].wins}-${teams[0].losses}` : 'No data'}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.topRecord')}</p>
+            <p className="mt-2 text-base font-semibold text-white">{teams[0]?.name || t('common.unavailable')}</p>
+            <p className="mt-1 text-sm text-slate-400">{teams[0] ? `${teams[0].wins}-${teams[0].losses}` : t('teams.noData')}</p>
           </div>
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">League offense</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.leagueOffense')}</p>
             <p className="mt-2 text-base font-semibold text-white">{leagueAverageOffense.toFixed(1)} PPG</p>
-            <p className="mt-1 text-sm text-slate-400">Average across all seeded teams.</p>
+            <p className="mt-1 text-sm text-slate-400">{t('teams.averageAcross')}</p>
           </div>
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Best differential</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.bestDifferential')}</p>
             <p className="mt-2 text-base font-semibold text-white">{strongestDifferential?.abbrev || '--'}</p>
             <p className="mt-1 text-sm text-slate-400">
-              {strongestDifferential ? `${getDifferential(strongestDifferential).toFixed(1)} net points` : 'No data'}
+              {strongestDifferential ? t('teams.netPoints', { value: getDifferential(strongestDifferential).toFixed(1) }) : t('teams.noData')}
             </p>
           </div>
           <div className="surface-muted">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Visible teams</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.visibleTeams')}</p>
             <p className="mt-2 text-base font-semibold text-white">{filteredTeams.length}</p>
-            <p className="mt-1 text-sm text-slate-400">Within the current view.</p>
+            <p className="mt-1 text-sm text-slate-400">{t('teams.withinView')}</p>
           </div>
         </div>
       </GlowingCard>
@@ -211,25 +215,25 @@ export const TeamsPage = () => {
               <thead className="bg-white/[0.02]">
                 <tr className="border-b border-white/8">
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Rank
+                    {t('teams.rank')}
                   </th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Team
+                    {t('teams.team')}
                   </th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Record
+                    {t('teams.record')}
                   </th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Win %
+                    {t('teams.winRate')}
                   </th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    For
+                    {t('teams.for')}
                   </th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Allowed
+                    {t('teams.allowed')}
                   </th>
                   <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Net
+                    {t('teams.net')}
                   </th>
                 </tr>
               </thead>
@@ -318,23 +322,23 @@ export const TeamsPage = () => {
 
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Record</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('teams.record')}</p>
                       <p className="mt-2 text-sm font-semibold tabular-nums text-white">{formatRecord(team)}</p>
                     </div>
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Win %</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('teams.winRate')}</p>
                       <p className="mt-2 text-sm tabular-nums text-white">{getWinRate(team).toFixed(1)}%</p>
                     </div>
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">For</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('teams.for')}</p>
                       <p className="mt-2 text-sm tabular-nums text-white">{team.avgPointsFor.toFixed(1)}</p>
                     </div>
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Allowed</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('teams.allowed')}</p>
                       <p className="mt-2 text-sm tabular-nums text-white">{team.avgPointsAgainst.toFixed(1)}</p>
                     </div>
                     <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Net</p>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{t('teams.net')}</p>
                       <p className={`mt-2 text-sm font-semibold tabular-nums ${differential >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                         {differential >= 0 ? '+' : ''}
                         {differential.toFixed(1)}
@@ -364,13 +368,13 @@ export const TeamsPage = () => {
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   <div className="surface-muted">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Record</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.record')}</p>
                     <p className="mt-2 text-xl font-semibold tabular-nums text-white">
                       {team.wins}-{team.losses}
                     </p>
                   </div>
                   <div className="surface-muted">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Net</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('teams.net')}</p>
                     <p className={`mt-2 text-xl font-semibold tabular-nums ${getDifferential(team) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                       {getDifferential(team) >= 0 ? '+' : ''}
                       {getDifferential(team).toFixed(1)}
