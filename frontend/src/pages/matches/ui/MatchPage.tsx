@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarRange, Sparkles } from 'lucide-react';
 import { apiRequest, type Match } from '@/shared/api/client';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
 
 export const MatchPage = () => {
   const { matchId } = useParams();
+  const { t } = useLanguage();
   const [match, setMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -35,9 +37,9 @@ export const MatchPage = () => {
       <div className="space-y-6">
         <Link to="/matches" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 transition hover:text-white">
           <ArrowLeft className="h-4 w-4" />
-          Back to matches
+          {t('match.backToMatches')}
         </Link>
-        <p className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-6 text-rose-100">Match not found.</p>
+        <p className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-6 text-rose-100">{t('match.notFound')}</p>
       </div>
     );
   }
@@ -46,7 +48,7 @@ export const MatchPage = () => {
     <div className="space-y-8">
       <Link to="/matches" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 transition hover:text-white">
         <ArrowLeft className="h-4 w-4" />
-        Back to schedule
+        {t('match.backToSchedule')}
       </Link>
 
       <GlowingCard glowColor="orange" className="p-8">
@@ -55,7 +57,7 @@ export const MatchPage = () => {
             <CalendarRange className="h-3.5 w-3.5" />
             {new Date(match.date).toLocaleDateString()}
           </span>
-          <span className="data-chip">{match.status === 'finished' ? 'Final score' : 'Upcoming fixture'}</span>
+          <span className="data-chip">{match.status === 'finished' ? t('match.finalScore') : t('match.upcomingFixture')}</span>
         </div>
 
         <div className="mt-8 grid items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
@@ -66,7 +68,7 @@ export const MatchPage = () => {
           </div>
 
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Scoreline</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-slate-400">{t('match.scoreline')}</p>
             <p className="mt-3 font-spacegrotesk text-5xl font-bold text-white">
               {match.homeScore ?? '--'} : {match.awayScore ?? '--'}
             </p>
@@ -87,15 +89,14 @@ export const MatchPage = () => {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">Action</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Use the AI engine for this matchup</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">{t('match.useAI')}</h2>
             <p className="mt-2 max-w-2xl text-slate-300">
-              Launch a probability run using the current team form and historical signal base already loaded into the
-              backend.
+              {t('match.useAIDesc')}
             </p>
           </div>
           <Link to={`/prediction/new?team1=${match.homeTeam.id}&team2=${match.awayTeam.id}`} className="btn-primary">
             <Sparkles className="h-4 w-4" />
-            Create prediction
+            {t('match.createPrediction')}
           </Link>
         </div>
       </GlowingCard>

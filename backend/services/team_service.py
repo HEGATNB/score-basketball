@@ -3,7 +3,6 @@ from sqlalchemy import text
 from datetime import datetime
 from typing import List, Optional, Dict
 
-
 class TeamService:
     def __init__(self, db: Session):
         self.db = db
