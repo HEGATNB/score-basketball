@@ -1,4 +1,3 @@
-// src/pages/home/ui/HomePage.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -34,7 +33,7 @@ export const HomePage = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [stats, setStats] = useState<{ accuracy?: number; totalTrainingData?: number; totalPredictions?: number } | null>(null);
+  const [stats, setStats] = useState<{ accuracy?: number; totalTrainingData?: number; totalTrainingGames?: number; totalPredictions?: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -91,7 +90,7 @@ export const HomePage = () => {
       },
       {
         labelKey: 'home.samples',
-        value: `${stats?.totalTrainingData ?? 0}`,
+        value: `${stats?.totalTrainingGames ?? 0}`,
         detailKey: 'home.historicalRecords',
         icon: Activity,
       },
