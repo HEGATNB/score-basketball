@@ -1,6 +1,8 @@
+// src/pages/analytics/ui/AnalyticsPage.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Cpu, Radar, Target } from 'lucide-react';
 import { apiRequest, type Match, type Player, type Team } from '@/shared/api/client';
+import { useLanguage } from '@/app/providers/LanguageProvider';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { BarChartComponent, LineChartComponent, PieChartComponent, ProgressBar } from '@/shared/ui/Charts';
 import { TeamMark } from '@/shared/ui/TeamMark';
@@ -44,6 +46,7 @@ function formatGameTime(date: string) {
 }
 
 export const AnalyticsPage = () => {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<PredictStats | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -144,7 +147,7 @@ export const AnalyticsPage = () => {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(232,161,67,0.2)] border-t-[var(--accent)]" />
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Loading analytics feed</p>
+          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">{t('analytics.loading')}</p>
         </div>
       </div>
     );
@@ -155,49 +158,48 @@ export const AnalyticsPage = () => {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.12fr)_360px]">
         <GlowingCard glowColor="orange" className="p-8">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="data-chip">Analytics board</span>
+            <span className="data-chip">{t('analytics.board')}</span>
             <span className="data-chip">{stats?.modelVersion || 'v3.1-signal-fusion'}</span>
           </div>
 
           <h1 className="mt-5 max-w-3xl font-spacegrotesk text-4xl font-bold leading-tight text-white sm:text-5xl">
-            One analytics workspace, split into clearer operating views.
+            {t('analytics.title')}
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
-            Model quality, league context and schedule behavior now live in separate sections so the page reads more
-            like an internal console and less like a wall of widgets.
+            {t('analytics.subtitle')}
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-4">
             <div className="metric-panel">
               <Target className="h-5 w-5 text-slate-200" />
               <p className="mt-3 text-2xl font-semibold text-white">{trackedAccuracy}%</p>
-              <p className="mt-1 text-sm text-slate-400">Accuracy</p>
+              <p className="mt-1 text-sm text-slate-400">{t('home.accuracy')}</p>
             </div>
             <div className="metric-panel">
               <Cpu className="h-5 w-5 text-slate-200" />
               <p className="mt-3 text-2xl font-semibold text-white">{stats?.totalPredictions ?? 0}</p>
-              <p className="mt-1 text-sm text-slate-400">Predictions</p>
+              <p className="mt-1 text-sm text-slate-400">{t('home.predictions')}</p>
             </div>
             <div className="metric-panel">
               <Radar className="h-5 w-5 text-slate-200" />
               <p className="mt-3 text-2xl font-semibold text-white">{stats?.totalTrainingData ?? 0}</p>
-              <p className="mt-1 text-sm text-slate-400">Training rows</p>
+              <p className="mt-1 text-sm text-slate-400">{t('home.samples')}</p>
             </div>
             <div className="metric-panel">
               <Activity className="h-5 w-5 text-slate-200" />
               <p className="mt-3 text-2xl font-semibold text-white">{players.length}</p>
-              <p className="mt-1 text-sm text-slate-400">Tracked players</p>
+              <p className="mt-1 text-sm text-slate-400">{t('analytics.trackedPlayers')}</p>
             </div>
           </div>
         </GlowingCard>
 
         <GlowingCard glowColor="blue" className="p-6">
-          <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">Views</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">{t('analytics.views')}</p>
           <div className="segmented-bar mt-5">
             {([
-              ['model', 'Model'],
-              ['league', 'League'],
-              ['schedule', 'Schedule'],
+              ['model', t('analytics.model')],
+              ['league', t('analytics.league')],
+              ['schedule', t('analytics.schedule')],
             ] as Array<[AnalyticsTab, string]>).map(([value, label]) => (
               <button
                 key={value}
@@ -211,22 +213,22 @@ export const AnalyticsPage = () => {
           </div>
 
           <div className="surface-muted mt-6 text-sm leading-6 text-slate-300">
-            {tab === 'model' && 'Model view keeps the focus on health, factor mix and database coverage.'}
-            {tab === 'league' && 'League view highlights contenders, offensive output and comparative team context.'}
-            {tab === 'schedule' && 'Schedule view surfaces game load and recently tracked fixtures.'}
+            {tab === 'model' && t('analytics.modelDesc')}
+            {tab === 'league' && t('analytics.leagueDesc')}
+            {tab === 'schedule' && t('analytics.scheduleDesc')}
           </div>
 
           <div className="mt-6 grid gap-3">
             <div className="surface-muted">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Top team</p>
-              <p className="mt-2 text-base font-semibold text-white">{topTeams[0]?.name || 'Unavailable'}</p>
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('analytics.topTeam')}</p>
+              <p className="mt-2 text-base font-semibold text-white">{topTeams[0]?.name || t('analytics.unavailable')}</p>
             </div>
             <div className="surface-muted">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Loaded games</p>
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('analytics.loadedGames')}</p>
               <p className="mt-2 text-base font-semibold text-white">{matches.length}</p>
             </div>
             <div className="surface-muted">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Tracked players</p>
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{t('analytics.trackedPlayers')}</p>
               <p className="mt-2 text-base font-semibold text-white">{players.length}</p>
             </div>
           </div>
@@ -236,33 +238,33 @@ export const AnalyticsPage = () => {
       {tab === 'model' && (
         <div className="grid gap-6 2xl:grid-cols-[340px_minmax(0,1fr)]">
           <GlowingCard glowColor="blue" className="h-full p-6">
-            <h2 className="text-2xl font-semibold text-white">Model health</h2>
+            <h2 className="text-2xl font-semibold text-white">{t('analytics.model')}</h2>
             <div className="mt-6 space-y-6">
-              <ProgressBar value={trackedAccuracy} label="Prediction accuracy" />
-              <ProgressBar value={dataDepth} label="Historical data depth" color="#1d428a" />
-              <ProgressBar value={rosterCoverage} label="Roster coverage" color="#34d399" />
-              <ProgressBar value={scheduleReadiness} label="Schedule readiness" color="#f59e0b" />
+              <ProgressBar value={trackedAccuracy} label={t('analytics.predictionAccuracy')} />
+              <ProgressBar value={dataDepth} label={t('analytics.historicalDepth')} color="#1d428a" />
+              <ProgressBar value={rosterCoverage} label={t('analytics.rosterCoverage')} color="#34d399" />
+              <ProgressBar value={scheduleReadiness} label={t('analytics.scheduleReadiness')} color="#f59e0b" />
             </div>
 
             <div className="mt-8 grid gap-3">
               <div className="surface-muted">
-                <p className="text-sm text-slate-400">Model version</p>
-                <p className="mt-2 text-lg font-semibold text-white">{stats?.modelVersion || 'Unavailable'}</p>
+                <p className="text-sm text-slate-400">{t('analytics.modelVersion')}</p>
+                <p className="mt-2 text-lg font-semibold text-white">{stats?.modelVersion || t('analytics.unavailable')}</p>
               </div>
               <div className="surface-muted">
-                <p className="text-sm text-slate-400">Teams connected</p>
+                <p className="text-sm text-slate-400">{t('analytics.teamsConnected')}</p>
                 <p className="mt-2 text-lg font-semibold text-white">{teams.length}</p>
               </div>
               <div className="surface-muted">
-                <p className="text-sm text-slate-400">Signals tracked</p>
+                <p className="text-sm text-slate-400">{t('analytics.signalsTracked')}</p>
                 <p className="mt-2 text-lg font-semibold text-white">{featureWeights.length}</p>
               </div>
             </div>
           </GlowingCard>
 
           <div className="grid gap-6 xl:grid-cols-2">
-            <BarChartComponent title="Health snapshot" data={modelHealth} dataKey="value" xAxisKey="metric" />
-            <PieChartComponent title="Model factor distribution" data={featureWeights} nameKey="name" valueKey="value" />
+            <BarChartComponent title={t('analytics.healthSnapshot')} data={modelHealth} dataKey="value" xAxisKey="metric" />
+            <PieChartComponent title={t('analytics.factorDistribution')} data={featureWeights} nameKey="name" valueKey="value" />
           </div>
         </div>
       )}
@@ -270,8 +272,8 @@ export const AnalyticsPage = () => {
       {tab === 'league' && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="grid gap-6 lg:grid-cols-2">
-            <LineChartComponent title="Contender win-rate board" data={contenderTrend} dataKey="winRate" xAxisKey="team" color="#1d428a" />
-            <BarChartComponent title="Offensive output by top teams" data={offenseBoard} dataKey="points" xAxisKey="team" />
+            <LineChartComponent title={t('analytics.contenderBoard')} data={contenderTrend} dataKey="winRate" xAxisKey="team" color="#1d428a" />
+            <BarChartComponent title={t('analytics.offensiveOutput')} data={offenseBoard} dataKey="points" xAxisKey="team" />
           </div>
 
           <GlowingCard glowColor="green" className="overflow-hidden p-0">
@@ -286,13 +288,13 @@ export const AnalyticsPage = () => {
                 <thead className="bg-white/[0.02]">
                   <tr className="border-b border-white/8">
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Rank
+                      {t('teams.rank')}
                     </th>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Team
+                      {t('teams.team')}
                     </th>
                     <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Win %
+                      {t('teams.winRate')}
                     </th>
                     <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                       PPG
@@ -352,7 +354,7 @@ export const AnalyticsPage = () => {
 
       {tab === 'schedule' && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <LineChartComponent title="Schedule intensity across loaded matches" data={scheduleIntensity} dataKey="count" xAxisKey="day" color="#f59e0b" />
+          <LineChartComponent title={t('analytics.scheduleIntensity')} data={scheduleIntensity} dataKey="count" xAxisKey="day" color="#f59e0b" />
 
           <GlowingCard glowColor="purple" className="overflow-hidden p-0">
             <div className="hidden lg:block">
@@ -365,13 +367,13 @@ export const AnalyticsPage = () => {
                 <thead className="bg-white/[0.02]">
                   <tr className="border-b border-white/8">
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Date
+                      {t('matches.date')}
                     </th>
                     <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Matchup
+                      {t('matches.matchup')}
                     </th>
                     <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Score
+                      {t('matches.score')}
                     </th>
                   </tr>
                 </thead>
@@ -399,7 +401,7 @@ export const AnalyticsPage = () => {
                           {match.homeScore ?? '--'} : {match.awayScore ?? '--'}
                         </p>
                         <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-                          {match.status === 'finished' ? 'Final' : 'Scheduled'}
+                          {match.status === 'finished' ? t('matches.final') : t('matches.scheduled')}
                         </p>
                       </td>
                     </tr>
@@ -421,7 +423,7 @@ export const AnalyticsPage = () => {
                         {match.homeScore ?? '--'} : {match.awayScore ?? '--'}
                       </p>
                       <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-                        {match.status === 'finished' ? 'Final' : 'Scheduled'}
+                        {match.status === 'finished' ? t('matches.final') : t('matches.scheduled')}
                       </p>
                     </div>
                   </div>
@@ -447,4 +449,3 @@ export const AnalyticsPage = () => {
 };
 
 export default AnalyticsPage;
-
