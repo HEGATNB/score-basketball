@@ -15,6 +15,7 @@ from config import config
 
 router = APIRouter()
 
+
 @router.post("/login", response_model=schemas.TokenResponse)
 async def login(
         request: Request,
@@ -159,7 +160,7 @@ async def logout(request: Request, db: Session = Depends(get_db)):
                     print(f"Токен добавлен в черный список, истекает через {expires_in} сек")
             except Exception as e:
                 print(f"Ошибка при получении expiration: {e}")
-                redis_service.blacklist_token(token, 604800) # 7 дней
+                redis_service.blacklist_token(token, 604800)  # 7 дней
 
         if user_data:
             try:
@@ -262,6 +263,7 @@ async def get_current_user_info(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Внутренняя ошибка сервера"
         )
+
 
 @router.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
