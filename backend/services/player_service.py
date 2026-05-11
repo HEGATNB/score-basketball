@@ -1,14 +1,15 @@
-# services/player_service.py
-
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Optional, Dict, Any
 import re
 
+from repositories.player_repository import PlayerRepository
+
 
 class PlayerService:
     def __init__(self, db: Session):
         self.db = db
+        self.player_repo = PlayerRepository(db)
 
     def _format_height(self, height_cm: Optional[str]) -> Optional[str]:
         """Форматирует рост"""
@@ -44,99 +45,22 @@ class PlayerService:
         Получение всех игроков с группировкой по имени
         """
         try:
-            # Проверяем наличие таблицы common_player_info
-            check_common = self.db.execute(text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_name = 'common_player_info'
-                )
-            """)).scalar()
-
-            # Формируем базовый запрос с JOIN на team для получения полной информации о команде
-            base_query = """
-                SELECT 
-                    p.id as id,
-                    p.player_name,
-                    p.team_abbreviation,
-                    p.age,
-                    p.player_height,
-                    p.player_weight,
-                    p.college,
-                    p.country,
-                    p.draft_year,
-                    p.draft_round,
-                    p.draft_number,
-                    p.gp as games_played,
-                    p.pts as points_per_game,
-                    p.reb as rebounds_per_game,
-                    p.ast as assists_per_game,
-                    p.net_rating,
-                    p.oreb_pct,
-                    p.dreb_pct,
-                    p.usg_pct as usage_rate,
-                    p.ts_pct as true_shooting,
-                    p.ast_pct as assist_percentage,
-                    p.season,
-                    t.id as team_id,
-                    t.full_name as team_name,
-                    t.abbreviation as team_abbrev,
-                    t.nickname as team_nickname,
-                    t.city as team_city,
-                    t.state as team_state,
-                    t.year_founded as team_founded_year,
-                    {position_select}
-                FROM players p
-                LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
-                {position_join}
-                WHERE p.gp >= :min_games
-            """
-
-            position_select = "c.position" if check_common else "NULL as position"
-            position_join = "LEFT JOIN common_player_info c ON p.player_name = c.display_first_last" if check_common else ""
-
-            query = base_query.format(
-                position_select=position_select,
-                position_join=position_join
+            players_data = self.player_repo.get_all(
+                team_abbrev=team_abbrev,
+                season=season,
+                search=search,
+                min_games=min_games,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                skip=skip,
+                limit=limit
             )
-
-            params = {"min_games": min_games}
-
-            if team_abbrev:
-                query += " AND p.team_abbreviation = :team_abbrev"
-                params["team_abbrev"] = team_abbrev.upper()
-
-            if season:
-                query += " AND p.season = :season"
-                params["season"] = season
-
-            if search:
-                query += " AND p.player_name ILIKE :search"
-                params["search"] = f"%{search}%"
-
-            # Валидация сортировки
-            valid_sort_columns = ['pts', 'reb', 'ast', 'player_name', 'gp', 'season']
-            if sort_by not in valid_sort_columns:
-                sort_by = 'pts'
-
-            sort_direction = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
-
-            query += f" ORDER BY p.{sort_by} {sort_direction} NULLS LAST"
-            query += " LIMIT :limit OFFSET :skip"
-
-            params["limit"] = limit
-            params["skip"] = skip
-
-            print(f"Выполняем запрос players с параметрами: {params}")
-            result = self.db.execute(text(query), params).fetchall()
-            print(f"Найдено {len(result)} записей")
 
             # Группируем игроков по имени
             players_by_name = {}
 
-            for row in result:
-                player_data = dict(row._mapping)
+            for player_data in players_data:
                 name = player_data.get("player_name")
-
                 if name not in players_by_name:
                     players_by_name[name] = []
                 players_by_name[name].append(player_data)
@@ -214,7 +138,7 @@ class PlayerService:
                     "draft_round": latest.get("draft_round"),
                     "draft_number": draft_number,
                     "season": latest.get("season"),
-                    "seasons": seasons_list,  # Список всех сезонов игрока
+                    "seasons": seasons_list,
                     "minutes_per_game": 0,
                     "steals_per_game": 0,
                     "blocks_per_game": 0,
@@ -232,109 +156,23 @@ class PlayerService:
     def get_player_by_id(self, player_id: int) -> Optional[Dict[str, Any]]:
         """Получение игрока по ID с группировкой сезонов"""
         try:
-            # Сначала получаем имя игрока
-            name_result = self.db.execute(
-                text("SELECT player_name FROM players WHERE id = :player_id"),
-                {"player_id": player_id}
-            ).fetchone()
+            player_data = self.player_repo.get_by_id(player_id)
 
-            if not name_result:
+            if not player_data:
                 return None
 
-            player_name = name_result[0]
-
             # Получаем все записи игрока с разными сезонами
-            check_common = self.db.execute(text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_name = 'common_player_info'
-                )
-            """)).scalar()
+            check_common = self.player_repo.check_common_player_info_exists()
 
             if check_common:
-                query = """
-                    SELECT 
-                        p.id,
-                        p.player_name,
-                        p.team_abbreviation,
-                        p.age,
-                        p.player_height,
-                        p.player_weight,
-                        p.college,
-                        p.country,
-                        p.draft_year,
-                        p.draft_round,
-                        p.draft_number,
-                        p.gp as games_played,
-                        p.pts as points_per_game,
-                        p.reb as rebounds_per_game,
-                        p.ast as assists_per_game,
-                        p.net_rating,
-                        p.oreb_pct,
-                        p.dreb_pct,
-                        p.usg_pct as usage_rate,
-                        p.ts_pct as true_shooting,
-                        p.ast_pct as assist_percentage,
-                        p.season,
-                        t.id as team_id,
-                        t.full_name as team_name,
-                        t.abbreviation as team_abbrev,
-                        t.nickname as team_nickname,
-                        t.city as team_city,
-                        t.state as team_state,
-                        t.year_founded as team_founded_year,
-                        c.position
-                    FROM players p
-                    LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
-                    LEFT JOIN common_player_info c ON p.player_name = c.display_first_last
-                    WHERE p.player_name = :player_name
-                    ORDER BY p.season DESC
-                """
+                all_results = self.player_repo.get_all_by_name_with_position(player_data["player_name"])
             else:
-                query = """
-                    SELECT 
-                        p.id,
-                        p.player_name,
-                        p.team_abbreviation,
-                        p.age,
-                        p.player_height,
-                        p.player_weight,
-                        p.college,
-                        p.country,
-                        p.draft_year,
-                        p.draft_round,
-                        p.draft_number,
-                        p.gp as games_played,
-                        p.pts as points_per_game,
-                        p.reb as rebounds_per_game,
-                        p.ast as assists_per_game,
-                        p.net_rating,
-                        p.oreb_pct,
-                        p.dreb_pct,
-                        p.usg_pct as usage_rate,
-                        p.ts_pct as true_shooting,
-                        p.ast_pct as assist_percentage,
-                        p.season,
-                        t.id as team_id,
-                        t.full_name as team_name,
-                        t.abbreviation as team_abbrev,
-                        t.nickname as team_nickname,
-                        t.city as team_city,
-                        t.state as team_state,
-                        t.year_founded as team_founded_year,
-                        NULL as position
-                    FROM players p
-                    LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
-                    WHERE p.player_name = :player_name
-                    ORDER BY p.season DESC
-                """
-
-            all_results = self.db.execute(text(query), {"player_name": player_name}).fetchall()
+                all_results = self.player_repo.get_all_by_name(player_data["player_name"])
 
             if not all_results:
                 return None
 
-            seasons_data = [dict(row._mapping) for row in all_results]
+            seasons_data = list(all_results)
             seasons_data.sort(key=lambda x: x.get("season", ""), reverse=True)
 
             current = seasons_data[0]
@@ -412,14 +250,7 @@ class PlayerService:
         return self.get_all_players(team_abbrev=team_abbrev)
 
     def get_seasons(self) -> List[str]:
-        try:
-            result = self.db.execute(
-                text("SELECT DISTINCT season FROM players ORDER BY season DESC")
-            ).fetchall()
-            return [row[0] for row in result]
-        except Exception as e:
-            print(f"Ошибка получения сезонов: {e}")
-            return []
+        return self.player_repo.get_seasons()
 
     def get_top_players(
             self,
@@ -427,54 +258,4 @@ class PlayerService:
             min_games: int = 10,
             limit: int = 50
     ) -> List[Dict[str, Any]]:
-        valid_categories = ['pts', 'reb', 'ast', 'net_rating']
-        if category not in valid_categories:
-            category = 'pts'
-
-        try:
-            query = f"""
-                SELECT DISTINCT ON (p.player_name)
-                    p.id as id,
-                    p.player_name,
-                    p.team_abbreviation,
-                    p.gp,
-                    p.{category} as value,
-                    p.pts,
-                    p.reb,
-                    p.ast,
-                    p.season,
-                    c.position
-                FROM players p
-                LEFT JOIN common_player_info c ON p.player_name = c.display_first_last
-                WHERE p.gp >= :min_games
-                ORDER BY p.player_name, p.season DESC
-            """
-
-            result = self.db.execute(
-                text(query),
-                {"min_games": min_games}
-            ).fetchall()
-
-            players_list = []
-            for row in result:
-                player_data = dict(row._mapping)
-                players_list.append({
-                    "id": player_data.get("id"),
-                    "player_name": player_data.get("player_name"),
-                    "team_abbrev": player_data.get("team_abbreviation"),
-                    "games_played": player_data.get("gp"),
-                    "value": float(player_data.get("value") or 0),
-                    "points_per_game": float(player_data.get("pts") or 0),
-                    "rebounds_per_game": float(player_data.get("reb") or 0),
-                    "assists_per_game": float(player_data.get("ast") or 0),
-                    "position": player_data.get("position"),
-                    "season": player_data.get("season")
-                })
-
-            players_list.sort(key=lambda x: x.get("value", 0), reverse=True)
-
-            return players_list[:limit]
-
-        except Exception as e:
-            print(f"Ошибка получения топ-игроков: {e}")
-            return []
+        return self.player_repo.get_top(category=category, min_games=min_games, limit=limit)
