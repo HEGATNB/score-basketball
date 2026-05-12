@@ -1,355 +1,622 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Activity, Database, Download, HardDriveDownload, RefreshCcw, Shield, Users } from 'lucide-react';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { apiRequest } from '@/shared/api/client';
+import { apiRequest, type AdminUser, type AuditLog, type Backup } from '@/shared/api/client';
 import { GlowingCard } from '@/shared/ui/GlowingCard';
-import { 
-  Shield, 
-  Users, 
-  Database, 
-  Activity, 
-  Download, 
-  Upload,
-  Trash2,
-  PlusCircle,
-  RefreshCw,
-  AlertCircle
-} from 'lucide-react';
 
-interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: string;
-  isBlocked: boolean;
-  createdAt: string;
+interface AdminStats {
+  totalUsers: number;
+  totalTeams: number;
+  totalPlayers: number;
+  totalMatches: number;
+  totalPredictions: number;
+  totalBackups: number;
+  accuracy: number | null;
+  lastBackupAt: string | null;
 }
 
-interface AuditLog {
-  id: string;
-  action: string;
-  entity: string;
-  details: any;
-  createdAt: string;
-  user?: {
-    name: string;
-    email: string;
-  };
+type AdminTab = 'overview' | 'users' | 'logs' | 'backups';
+
+function formatDateTime(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : 'No backups yet';
 }
 
-interface Backup {
-  id: string;
-  filename: string;
-  size: number;
-  type: string;
-  status: string;
-  createdAt: string;
+function getUserStatusTone(isBlocked: boolean) {
+  return isBlocked
+    ? 'border-rose-400/20 bg-rose-500/10 text-rose-100'
+    : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100';
 }
 
 export const AdminPage = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'logs' | 'backup' | 'stats'>('stats');
-  const [users, setUsers] = useState<User[]>([]);
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(false);
-  const [backupJson, setBackupJson] = useState('');
-  const [stats, setStats] = useState<any>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      navigate('/', { replace: true });
+    }
+  }, [authLoading, isAdmin, navigate]);
 
   useEffect(() => {
     if (!isAdmin) {
-      navigate('/');
+      return;
     }
-  }, [isAdmin, navigate]);
 
-  useEffect(() => {
-    if (activeTab === 'users') loadUsers();
-    if (activeTab === 'logs') loadLogs();
-    if (activeTab === 'backup') loadBackups();
-    if (activeTab === 'stats') loadStats();
-  }, [activeTab]);
+    const load = async () => {
+      setLoading(true);
+      setNotice(null);
 
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest<User[]>('/admin/users');
-      setUsers(data);
-    } catch (err) {
-      console.error('Ошибка загрузки пользователей:', err);
-    } finally {
-      setLoading(false);
-    }
+      try {
+        if (activeTab === 'overview') {
+          setStats(await apiRequest<AdminStats>('/admin/stats', undefined, false));
+          return;
+        }
+
+        if (activeTab === 'users') {
+          setUsers(await apiRequest<AdminUser[]>('/admin/users', undefined, false));
+          return;
+        }
+
+        if (activeTab === 'logs') {
+          setLogs(await apiRequest<AuditLog[]>('/admin/logs', undefined, false));
+          return;
+        }
+
+        setBackups(await apiRequest<Backup[]>('/admin/backups', undefined, false));
+      } catch (error) {
+        console.error('Failed to load admin data', error);
+        setNotice({ type: 'error', message: 'Failed to load admin data from the backend.' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [activeTab, isAdmin]);
+
+  const headlineCards = [
+    { label: 'Users', value: stats?.totalUsers ?? 0, meta: 'registered accounts', glowColor: 'orange' as const },
+    { label: 'Predictions', value: stats?.totalPredictions ?? 0, meta: 'stored inference runs', glowColor: 'blue' as const },
+    { label: 'Players', value: stats?.totalPlayers ?? 0, meta: 'seeded athlete profiles', glowColor: 'green' as const },
+    { label: 'Matches', value: stats?.totalMatches ?? 0, meta: 'live schedule records', glowColor: 'purple' as const },
+  ];
+
+  const activeUsers = users.filter((account) => !account.isBlocked).length;
+  const blockedUsers = users.filter((account) => account.isBlocked).length;
+
+  const loadOverview = async () => {
+    setStats(await apiRequest<AdminStats>('/admin/stats', undefined, false));
   };
 
-  const loadLogs = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest<AuditLog[]>('/admin/logs');
-      setLogs(data);
-    } catch (err) {
-      console.error('Ошибка загрузки логов:', err);
-    } finally {
-      setLoading(false);
-    }
+  const loadUsers = async () => {
+    setUsers(await apiRequest<AdminUser[]>('/admin/users', undefined, false));
   };
 
   const loadBackups = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest<Backup[]>('/admin/backups');
-      setBackups(data);
-    } catch (err) {
-      console.error('Ошибка загрузки бэкапов:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadStats = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest<any>('/admin/stats');
-      setStats(data);
-    } catch (err) {
-      console.error('Ошибка загрузки статистики:', err);
-    } finally {
-      setLoading(false);
-    }
+    setBackups(await apiRequest<Backup[]>('/admin/backups', undefined, false));
   };
 
   const handleCreateBackup = async () => {
+    setBusyKey('create-backup');
+    setNotice(null);
+
     try {
-      const result = await apiRequest<any>('/admin/backup', { method: 'POST' });
-      alert('✅ Бэкап создан: ' + result.filename);
-      loadBackups();
-    } catch (err) {
-      alert('❌ Ошибка создания бэкапа');
+      const backup = await apiRequest<Backup>(
+        '/admin/backup',
+        {
+          method: 'POST',
+        },
+        false,
+      );
+
+      await Promise.all([loadBackups(), loadOverview()]);
+      setActiveTab('backups');
+      setNotice({ type: 'success', message: `Backup created: ${backup.filename}` });
+    } catch (error) {
+      console.error('Failed to create backup', error);
+      setNotice({ type: 'error', message: 'Backup creation failed.' });
+    } finally {
+      setBusyKey(null);
     }
   };
 
-  const handleRestoreBackup = async (backupId: string) => {
-    if (!confirm('Это перезапишет текущую базу! Уверены?')) return;
-    
+  const handleRestoreBackup = async (backup: Backup) => {
+    const shouldRestore = window.confirm(`Restore ${backup.filename}? This will overwrite the current database content.`);
+
+    if (!shouldRestore) {
+      return;
+    }
+
+    setBusyKey(`restore-${backup.id}`);
+    setNotice(null);
+
     try {
-      await apiRequest(`/admin/restore/${backupId}`, { method: 'POST' });
-      alert('✅ База восстановлена');
-    } catch (err) {
-      alert('❌ Ошибка восстановления');
+      await apiRequest(
+        `/admin/restore/${backup.id}`,
+        {
+          method: 'POST',
+        },
+        false,
+      );
+
+      await Promise.all([loadBackups(), loadOverview()]);
+      setNotice({ type: 'success', message: `Backup restored: ${backup.filename}` });
+    } catch (error) {
+      console.error('Failed to restore backup', error);
+      setNotice({ type: 'error', message: 'Backup restore failed.' });
+    } finally {
+      setBusyKey(null);
     }
   };
 
-  const toggleUserBlock = async (userId: number, currentState: boolean) => {
+  const toggleUserBlock = async (targetUser: AdminUser) => {
+    setBusyKey(`user-${targetUser.id}`);
+    setNotice(null);
+
     try {
-      await apiRequest(`/admin/users/${userId}/block`, {
-        method: 'PUT',
-        body: JSON.stringify({ isBlocked: !currentState })
+      const updated = await apiRequest<AdminUser>(
+        `/admin/users/${targetUser.id}/block`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isBlocked: !targetUser.isBlocked }),
+        },
+        false,
+      );
+
+      await Promise.all([loadUsers(), loadOverview()]);
+      setNotice({
+        type: 'success',
+        message: `${updated.username} is now ${updated.isBlocked ? 'blocked' : 'active'}.`,
       });
-      loadUsers();
-    } catch (err) {
-      alert('❌ Ошибка изменения статуса');
+    } catch (error) {
+      console.error('Failed to change user status', error);
+      setNotice({ type: 'error', message: 'User status update failed.' });
+    } finally {
+      setBusyKey(null);
     }
   };
 
-  if (!isAdmin) return null;
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b]" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3"
-      >
-        <Shield className="w-8 h-8 text-orange-400" />
-        <div>
-          <h1 className="text-3xl font-bold text-white">Панель администратора</h1>
-          <p className="text-slate-400">Управление системой</p>
-        </div>
-      </motion.div>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_360px]">
+        <GlowingCard glowColor="orange" className="p-8">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="data-chip">
+              <Shield className="h-3.5 w-3.5" />
+              Restricted workspace
+            </span>
+            <span className="data-chip">{user.email}</span>
+          </div>
 
-      {/* Табы */}
-      <div className="flex gap-2 border-b border-slate-800 pb-4">
-        {[
-          { id: 'stats', label: 'Статистика', icon: Activity },
-          { id: 'users', label: 'Пользователи', icon: Users },
-          { id: 'logs', label: 'Журнал', icon: Database },
-          { id: 'backup', label: 'Бэкапы', icon: Download },
-        ].map((tab) => (
+          <h1 className="mt-5 max-w-3xl font-spacegrotesk text-4xl font-bold leading-tight text-white sm:text-5xl">
+            Admin tools grouped into a cleaner control room.
+          </h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300">
+            Users, audits and backups stay in separate operational views so moderation and maintenance feel tighter and
+            easier to scan.
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleCreateBackup}
+              disabled={busyKey === 'create-backup'}
+              className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <HardDriveDownload className="h-4 w-4" />
+              {busyKey === 'create-backup' ? 'Creating backup...' : 'Create backup'}
+            </button>
+            <button type="button" onClick={() => setActiveTab('users')} className="btn-secondary">
+              <Users className="h-4 w-4" />
+              Review users
+            </button>
+          </div>
+        </GlowingCard>
+
+        <GlowingCard glowColor="blue" className="p-6">
+          <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">System snapshot</p>
+          <div className="mt-5 grid gap-3">
+            <div className="surface-muted">
+              <p className="text-sm text-slate-400">Model accuracy</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{Math.round(stats?.accuracy ?? 0)}%</p>
+            </div>
+            <div className="surface-muted">
+              <p className="text-sm text-slate-400">Backups stored</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{stats?.totalBackups ?? 0}</p>
+            </div>
+            <div className="surface-muted">
+              <p className="text-sm text-slate-400">Last backup</p>
+              <p className="mt-2 text-lg font-semibold text-white">
+                {formatDateTime(stats?.lastBackupAt)}
+              </p>
+            </div>
+          </div>
+        </GlowingCard>
+      </section>
+
+      {notice && (
+        <div
+          className={`rounded-xl border px-5 py-4 text-sm ${
+            notice.type === 'success'
+              ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+              : 'border-rose-400/20 bg-rose-500/10 text-rose-100'
+          }`}
+        >
+          {notice.message}
+        </div>
+      )}
+
+      <div className="segmented-bar">
+        {([
+          ['overview', 'Overview', Activity],
+          ['users', 'Users', Users],
+          ['logs', 'Audit log', Database],
+          ['backups', 'Backups', Download],
+        ] as const).map(([tabId, label, Icon]) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${
-              activeTab === tab.id
-                ? 'bg-orange-500 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
+            key={tabId}
+            type="button"
+            onClick={() => setActiveTab(tabId)}
+            className={`segmented-item inline-flex items-center gap-2 ${activeTab === tabId ? 'segmented-item-active' : ''}`}
           >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
+            <Icon className="h-4 w-4" />
+            {label}
           </button>
         ))}
       </div>
 
-      {/* Контент вкладок */}
-      <div className="min-h-[400px]">
-        {loading && (
-          <div className="flex justify-center py-12">
-            <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* Статистика */}
-        {activeTab === 'stats' && !loading && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <GlowingCard className="p-6">
-              <p className="text-slate-400 mb-2">Всего пользователей</p>
-              <p className="text-3xl font-bold text-white">{stats?.totalUsers || 0}</p>
-            </GlowingCard>
-            <GlowingCard className="p-6">
-              <p className="text-slate-400 mb-2">Всего прогнозов</p>
-              <p className="text-3xl font-bold text-white">{stats?.totalPredictions || 0}</p>
-            </GlowingCard>
-            <GlowingCard className="p-6">
-              <p className="text-slate-400 mb-2">Точность модели</p>
-              <p className="text-3xl font-bold text-orange-400">{stats?.accuracy || 0}%</p>
-            </GlowingCard>
-          </div>
-        )}
-
-        {/* Пользователи */}
-        {activeTab === 'users' && !loading && (
-          <GlowingCard className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-white">Управление пользователями</h3>
-              <button className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 flex items-center gap-2">
-                <PlusCircle className="w-4 h-4" />
-                Добавить
-              </button>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-800">
-                    <th className="text-left py-3 text-slate-400">ID</th>
-                    <th className="text-left py-3 text-slate-400">Имя</th>
-                    <th className="text-left py-3 text-slate-400">Email</th>
-                    <th className="text-left py-3 text-slate-400">Роль</th>
-                    <th className="text-left py-3 text-slate-400">Статус</th>
-                    <th className="text-left py-3 text-slate-400">Действия</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} className="border-b border-slate-800/50">
-                      <td className="py-3">{u.id}</td>
-                      <td className="py-3">{u.name}</td>
-                      <td className="py-3">{u.email}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          u.role === 'admin' ? 'bg-orange-500/20 text-orange-400' :
-                          u.role === 'operator' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-green-500/20 text-green-400'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          u.isBlocked ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'
-                        }`}>
-                          {u.isBlocked ? 'Заблокирован' : 'Активен'}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <button
-                          onClick={() => toggleUserBlock(u.id, u.isBlocked)}
-                          className={`px-3 py-1 rounded-lg text-sm ${
-                            u.isBlocked 
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' 
-                              : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                          }`}
-                        >
-                          {u.isBlocked ? 'Разблокировать' : 'Заблокировать'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </GlowingCard>
-        )}
-
-        {/* Журнал действий */}
-        {activeTab === 'logs' && !loading && (
-          <GlowingCard className="p-6">
-            <h3 className="text-lg font-bold text-white mb-6">Журнал действий</h3>
-            
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {logs.map((log) => (
-                <div key={log.id} className="p-4 bg-slate-800/30 rounded-xl">
-                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
-                    <span>{new Date(log.createdAt).toLocaleString()}</span>
-                    <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 rounded-full text-xs">
-                      {log.action}
-                    </span>
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-xs">
-                      {log.entity}
-                    </span>
-                  </div>
-                  <p className="text-white">{log.details ? JSON.stringify(log.details) : ''}</p>
-                  {log.user && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      Пользователь: {log.user.name} ({log.user.email})
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </GlowingCard>
-        )}
-
-        {/* Бэкапы */}
-        {activeTab === 'backup' && !loading && (
-          <div className="space-y-6">
-            <GlowingCard className="p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Создать бэкап</h3>
-              <button
-                onClick={handleCreateBackup}
-                className="px-6 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 flex items-center gap-2"
-              >
-                <Download className="w-5 h-5" />
-                Создать резервную копию
-              </button>
-            </GlowingCard>
-
-            <GlowingCard className="p-6">
-              <h3 className="text-lg font-bold text-white mb-4">Существующие бэкапы</h3>
-              
-              <div className="space-y-3">
-                {backups.map((backup) => (
-                  <div key={backup.id} className="flex items-center justify-between p-4 bg-slate-800/30 rounded-xl">
-                    <div>
-                      <p className="text-white font-medium">{backup.filename}</p>
-                      <p className="text-xs text-slate-400">
-                        {new Date(backup.createdAt).toLocaleString()} • {(backup.size / 1024).toFixed(2)} KB
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleRestoreBackup(backup.id)}
-                      className="px-4 py-2 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30"
-                    >
-                      Восстановить
-                    </button>
-                  </div>
+      {loading ? (
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <div className="h-14 w-14 animate-spin rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b]" />
+        </div>
+      ) : (
+        <>
+          {activeTab === 'overview' && (
+            <section className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {headlineCards.map((card) => (
+                  <GlowingCard key={card.label} glowColor={card.glowColor} className="p-5">
+                    <p className="text-sm text-slate-400">{card.label}</p>
+                    <p className="mt-3 text-3xl font-semibold text-white">{card.value}</p>
+                    <p className="mt-2 text-sm text-slate-500">{card.meta}</p>
+                  </GlowingCard>
                 ))}
               </div>
+
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <GlowingCard glowColor="green" className="p-0">
+                  <div className="table-head">Stack status</div>
+                  <div className="grid gap-0">
+                    {[
+                      ['Teams tracked', stats?.totalTeams ?? 0],
+                      ['Matches tracked', stats?.totalMatches ?? 0],
+                      ['Players tracked', stats?.totalPlayers ?? 0],
+                      ['Predictions tracked', stats?.totalPredictions ?? 0],
+                    ].map(([label, value]) => (
+                      <div key={label} className="table-row flex items-center justify-between px-5 py-4">
+                        <span className="text-sm text-slate-400">{label}</span>
+                        <span className="text-lg font-semibold text-white">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </GlowingCard>
+
+                <GlowingCard glowColor="blue" className="p-6">
+                  <h3 className="text-2xl font-semibold text-white">Quick actions</h3>
+                  <div className="mt-5 grid gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCreateBackup}
+                      disabled={busyKey === 'create-backup'}
+                      className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      <Download className="h-4 w-4" />
+                      {busyKey === 'create-backup' ? 'Creating backup...' : 'Create new backup'}
+                    </button>
+                    <button type="button" onClick={() => setActiveTab('logs')} className="btn-secondary justify-center">
+                      <Database className="h-4 w-4" />
+                      Open audit log
+                    </button>
+                  </div>
+                </GlowingCard>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'users' && (
+            <section className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="surface-muted">
+                  <p className="text-sm text-slate-400">Active accounts</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{activeUsers}</p>
+                </div>
+                <div className="surface-muted">
+                  <p className="text-sm text-slate-400">Blocked accounts</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{blockedUsers}</p>
+                </div>
+              </div>
+
+              <GlowingCard glowColor="blue" className="overflow-hidden p-0">
+                {users.length === 0 ? (
+                  <div className="px-5 py-6 text-sm text-slate-400">No users were returned by the backend.</div>
+                ) : (
+                  <>
+                    <div className="hidden lg:block">
+                      <table className="w-full table-fixed border-collapse">
+                        <colgroup>
+                          <col />
+                          <col style={{ width: '110px' }} />
+                          <col style={{ width: '130px' }} />
+                          <col style={{ width: '148px' }} />
+                        </colgroup>
+                        <thead className="bg-white/[0.02]">
+                          <tr className="border-b border-white/8">
+                            <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              User
+                            </th>
+                            <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Role
+                            </th>
+                            <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Status
+                            </th>
+                            <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.map((adminUser) => (
+                            <tr key={adminUser.id} className="border-t border-white/6 transition-colors hover:bg-white/[0.03]">
+                              <td className="px-5 py-4 align-middle">
+                                <p className="text-base font-semibold text-white">{adminUser.name || adminUser.username}</p>
+                                <p className="mt-1 text-sm text-slate-300">{adminUser.email}</p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+                                  Joined {new Date(adminUser.createdAt).toLocaleDateString()}
+                                </p>
+                              </td>
+                              <td className="px-5 py-4 align-middle text-sm text-white">{adminUser.role}</td>
+                              <td className="px-5 py-4 align-middle">
+                                <span className={`status-pill ${getUserStatusTone(adminUser.isBlocked)}`}>
+                                  {adminUser.isBlocked ? 'Blocked' : 'Active'}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 text-right align-middle">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleUserBlock(adminUser)}
+                                  disabled={busyKey === `user-${adminUser.id}`}
+                                  className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    adminUser.isBlocked
+                                      ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15'
+                                      : 'border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15'
+                                  }`}
+                                >
+                                  {busyKey === `user-${adminUser.id}` ? 'Updating...' : adminUser.isBlocked ? 'Unblock' : 'Block'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="lg:hidden">
+                      {users.map((adminUser) => (
+                        <div key={adminUser.id} className="table-row px-5 py-4">
+                          <div>
+                            <p className="text-base font-semibold text-white">{adminUser.name || adminUser.username}</p>
+                            <p className="mt-1 text-sm text-slate-300">{adminUser.email}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+                              Joined {new Date(adminUser.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Role</span>
+                            <span className="text-sm text-white">{adminUser.role}</span>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</span>
+                            <span className={`status-pill ${getUserStatusTone(adminUser.isBlocked)}`}>
+                              {adminUser.isBlocked ? 'Blocked' : 'Active'}
+                            </span>
+                          </div>
+
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              onClick={() => toggleUserBlock(adminUser)}
+                              disabled={busyKey === `user-${adminUser.id}`}
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                adminUser.isBlocked
+                                  ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15'
+                                  : 'border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15'
+                              }`}
+                            >
+                              {busyKey === `user-${adminUser.id}` ? 'Updating...' : adminUser.isBlocked ? 'Unblock' : 'Block'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </GlowingCard>
+            </section>
+          )}
+
+          {activeTab === 'logs' && (
+            <GlowingCard glowColor="purple" className="p-0">
+              <div className="table-head">Audit timeline</div>
+              {logs.length === 0 ? (
+                <div className="px-5 py-6 text-sm text-slate-400">No audit events were returned by the backend.</div>
+              ) : (
+                <div>
+                  {logs.map((log) => (
+                    <div key={log.id} className="table-row px-5 py-4">
+                      <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-slate-500">
+                        <span>{formatDateTime(log.createdAt)}</span>
+                        <span className="status-pill border-orange-400/20 bg-orange-500/10 text-orange-100">{log.action}</span>
+                        <span className="status-pill border-cyan-400/20 bg-cyan-500/10 text-cyan-100">{log.entity}</span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-200">
+                        {log.details ? JSON.stringify(log.details) : 'No additional details were recorded.'}
+                      </p>
+                      {log.user && (
+                        <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+                          Actor: {log.user.username || log.user.name || log.user.email}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </GlowingCard>
-          </div>
-        )}
-      </div>
+          )}
+
+          {activeTab === 'backups' && (
+            <section className="space-y-6">
+              <GlowingCard glowColor="orange" className="p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-white">Backup operations</h3>
+                    <p className="mt-2 text-slate-300">Create restorable snapshots directly from the connected admin API.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateBackup}
+                    disabled={busyKey === 'create-backup'}
+                    className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    <Download className="h-4 w-4" />
+                    {busyKey === 'create-backup' ? 'Creating backup...' : 'Create new backup'}
+                  </button>
+                </div>
+              </GlowingCard>
+
+              <GlowingCard glowColor="blue" className="overflow-hidden p-0">
+                {backups.length === 0 ? (
+                  <div className="px-5 py-6 text-sm text-slate-400">No backups are currently available.</div>
+                ) : (
+                  <>
+                    <div className="hidden lg:block">
+                      <table className="w-full table-fixed border-collapse">
+                        <colgroup>
+                          <col />
+                          <col style={{ width: '96px' }} />
+                          <col style={{ width: '120px' }} />
+                          <col style={{ width: '148px' }} />
+                        </colgroup>
+                        <thead className="bg-white/[0.02]">
+                          <tr className="border-b border-white/8">
+                            <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Backup
+                            </th>
+                            <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Size
+                            </th>
+                            <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Status
+                            </th>
+                            <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backups.map((backup) => (
+                            <tr key={backup.id} className="border-t border-white/6 transition-colors hover:bg-white/[0.03]">
+                              <td className="px-5 py-4 align-middle">
+                                <h4 className="text-lg font-semibold text-white">{backup.filename}</h4>
+                                <p className="mt-1 text-sm text-slate-300">{formatDateTime(backup.createdAt)}</p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{backup.type}</p>
+                              </td>
+                              <td className="px-5 py-4 text-right align-middle text-sm tabular-nums text-white">
+                                {(backup.size / 1024).toFixed(2)} KB
+                              </td>
+                              <td className="px-5 py-4 align-middle">
+                                <span className="status-pill border-cyan-400/20 bg-cyan-500/10 text-cyan-100">{backup.status}</span>
+                              </td>
+                              <td className="px-5 py-4 text-right align-middle">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreBackup(backup)}
+                                  disabled={busyKey === `restore-${backup.id}`}
+                                  className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <RefreshCcw className="h-4 w-4" />
+                                  {busyKey === `restore-${backup.id}` ? 'Restoring...' : 'Restore'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="lg:hidden">
+                      {backups.map((backup) => (
+                        <div key={backup.id} className="table-row px-5 py-4">
+                          <div>
+                            <h4 className="text-lg font-semibold text-white">{backup.filename}</h4>
+                            <p className="mt-1 text-sm text-slate-300">{formatDateTime(backup.createdAt)}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{backup.type}</p>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Size</span>
+                            <span className="text-sm tabular-nums text-white">{(backup.size / 1024).toFixed(2)} KB</span>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-4">
+                            <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</span>
+                            <span className="status-pill border-cyan-400/20 bg-cyan-500/10 text-cyan-100">{backup.status}</span>
+                          </div>
+
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreBackup(backup)}
+                              disabled={busyKey === `restore-${backup.id}`}
+                              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <RefreshCcw className="h-4 w-4" />
+                              {busyKey === `restore-${backup.id}` ? 'Restoring...' : 'Restore'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </GlowingCard>
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 };

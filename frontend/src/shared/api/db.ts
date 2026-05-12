@@ -1,6 +1,5 @@
-import { Team } from "@/entities/team";
-import { Match } from "@/entities/match";
-import { Prediction } from "@/entities/prediction";
+import type { Team } from "@/entities/team/model/types";
+import type { Match } from "@/entities/match/model/types";
 
 // ТИПЫ БД
 export type UserRole = "admin" | "operator" | "client";

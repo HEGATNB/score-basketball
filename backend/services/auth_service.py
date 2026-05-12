@@ -1,94 +1,148 @@
 from sqlalchemy.orm import Session
-import sqlite3
+from typing import Optional, Dict, Any, Union
 from datetime import datetime
 import sys
 import os
 
-# Добавляем путь к корневой папке
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Импортируем функции напрямую, а не весь модуль
-from scripts.auth import get_password_hash, verify_password, TokenPayload, generate_token
-import schemas
-
-DB_PATH = "./nba.sqlite"
+from scripts.auth import get_password_hash, verify_password
+from repositories.user_repository import UserRepository
 
 
 class AuthService:
     def __init__(self, db: Session):
         self.db = db
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.row_factory = sqlite3.Row
+        self.user_repo = UserRepository(db)
 
-    def get_user_by_email(self, email: str):
-        """Получение пользователя по email"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-        return cursor.fetchone()
+    def authenticate_user(self, email: str, password: str) -> Optional[Dict[str, Any]]:
+        # Аутентификация пользователя по email
+        try:
+            print(f"Попытка аутентификации по email: {email}")
 
-    def get_user_by_id(self, user_id: int):
-        """Получение пользователя по ID"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        return cursor.fetchone()
+            user = self.user_repo.get_by_email(email)
 
-    def create_user(self, user_data):
-        """Создание нового пользователя"""
-        hashed_password = get_password_hash(user_data.password)  # изменено
-        cursor = self.conn.cursor()
+            if not user:
+                print(f"Пользователь с email {email} не найден")
+                return None
 
-        cursor.execute(
-            "INSERT INTO users (email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_data.email, hashed_password, user_data.name,
-             user_data.role or "user", datetime.utcnow().isoformat())
-        )
-        self.conn.commit()
+            return self._verify_and_return_user(user, password)
 
-        user_id = cursor.lastrowid
-        return self.get_user_by_id(user_id)
-
-    def authenticate_user(self, email: str, password: str):
-        """Аутентификация пользователя"""
-        user = self.get_user_by_email(email)
-        if not user:
+        except Exception as e:
+            print(f"Ошибка аутентификации: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-        if not verify_password(password, user["password_hash"]):  # изменено
+
+    def authenticate_by_username(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+        # Аутентификация пользователя по username
+        try:
+            print(f"Попытка аутентификации по username: {username}")
+
+            user = self.user_repo.get_by_username(username)
+
+            if not user:
+                print(f"Пользователь с username {username} не найден")
+                return None
+
+            return self._verify_and_return_user(user, password)
+
+        except Exception as e:
+            print(f"Ошибка аутентификации: {e}")
             return None
-        return user
 
-    def init_database(self):
-        """Инициализация БД тестовыми данными"""
-        cursor = self.conn.cursor()
+    def _verify_and_return_user(self, user: Dict, password: str) -> Optional[Dict[str, Any]]:
+        # Проверка пароля по хешу
+        stored_hash = user.get("password_hash")
+        if not stored_hash:
+            print("У пользователя нет хеша пароля")
+            return None
 
-        # Создаем таблицу users если нет
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE,
-                password_hash TEXT,
-                name TEXT,
-                role TEXT DEFAULT 'user',
-                is_blocked INTEGER DEFAULT 0,
-                created_at TIMESTAMP
+        is_valid = verify_password(password, stored_hash)
+        print(f"Результат проверки пароля: {is_valid}")
+
+        if not is_valid:
+            return None
+
+        if user.get("is_blocked"):
+            print("Пользователь заблокирован")
+            return None
+
+        return {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user.get("name") or user.get("username") or user["email"].split('@')[0],
+            "username": user.get("username"),
+            "role": user["role"],
+            "is_blocked": user["is_blocked"],
+            "created_at": user["created_at"]
+        }
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        return self.user_repo.get_by_email(email)
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+        return self.user_repo.get_by_id(user_id)
+
+    def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            # Хешируем пароль
+            password_hash = get_password_hash(user_data["password"])
+            print(f"Создан хеш пароля: {password_hash[:20]}...")
+
+            # Определяем username
+            username = user_data.get("username") or user_data.get("name") or user_data["email"].split('@')[0]
+
+            # Создаем пользователя через репозиторий
+            user = self.user_repo.create(
+                email=user_data["email"],
+                name=user_data.get("name", username),
+                username=username,
+                password_hash=password_hash,
+                role=user_data.get("role", "user")
             )
-        ''')
+
+            print(f"Создан пользователь: {user['email']} с ID={user['id']}")
+            return user
+
+        except Exception as e:
+            print(f"Ошибка создания пользователя: {e}")
+            raise
+
+    def init_database(self) -> Dict[str, Any]:
+        # Инициализация тестовые пользователи
+        created_users = []
 
         test_users = [
-            ("admin@sys.com", get_password_hash("admin"), "Admin", "admin"),
-            ("operator@sys.com", get_password_hash("operator"), "Operator", "operator"),
-            ("user@sys.com", get_password_hash("user"), "User", "user"),
+            {"email": "admin@sys.com", "name": "Admin", "username": "admin", "password": "admin", "role": "admin"},
+            {"email": "operator@sys.com", "name": "Operator", "username": "operator", "password": "operator",
+             "role": "operator"},
+            {"email": "user@sys.com", "name": "User", "username": "user", "password": "user", "role": "user"},
         ]
 
-        created = []
-        for email, pwd, name, role in test_users:
+        for user_data in test_users:
             try:
-                cursor.execute(
-                    "INSERT INTO users (email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (email, pwd, name, role, datetime.utcnow().isoformat())
-                )
-                created.append(email)
-            except:
-                pass
+                # Проверяем, существует ли пользователь
+                existing = self.get_user_by_email(user_data["email"])
+                if existing:
+                    print(f"Пользователь {user_data['email']} уже существует")
+                    created_users.append(user_data["email"])
+                    continue
 
-        self.conn.commit()
-        return {"created_users": created}
+                # Создание пользователя
+                password_hash = get_password_hash(user_data["password"])
+
+                self.user_repo.create(
+                    email=user_data["email"],
+                    name=user_data["name"],
+                    username=user_data["username"],
+                    password_hash=password_hash,
+                    role=user_data["role"]
+                )
+
+                created_users.append(user_data["email"])
+                print(f"Создан тестовый пользователь: {user_data['email']}")
+
+            except Exception as e:
+                print(f"Ошибка создания {user_data['email']}: {e}")
+
+        return {"created_users": created_users}

@@ -1,144 +1,135 @@
 from sqlalchemy.orm import Session
-import sqlite3
+from sqlalchemy import text
 from datetime import datetime
-import sys
-import os
 from typing import List, Optional, Dict, Any
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-DB_PATH = "./nba.sqlite"
+from repositories.game_repository import GameRepository
 
 
 class MatchService:
     def __init__(self, db: Session):
         self.db = db
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.row_factory = sqlite3.Row
+        self.game_repo = GameRepository(db)
 
     def get_all_matches(self, filters: Dict = None, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
-        """Получение всех матчей с фильтрацией"""
-        cursor = self.conn.cursor()
+        """Получение всех матчей"""
+        try:
+            status_filter = None
+            if filters and filters.get("status"):
+                status_filter = filters["status"]
 
-        # Проверяем, есть ли таблица game
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='game'")
-        if not cursor.fetchone():
-            return []  # Возвращаем пустой список, если нет таблицы
+            games = self.game_repo.get_all(status_filter=status_filter, skip=skip, limit=limit)
 
-        # Базовый запрос
-        query = "SELECT * FROM game"
-        params = []
+            matches = []
+            used_ids = set()
 
-        # Применяем фильтры
-        if filters and filters.get("status"):
-            if filters["status"] == "finished":
-                query += " WHERE wl_home IS NOT NULL"
-            elif filters["status"] == "scheduled":
-                query += " WHERE wl_home IS NULL"
+            for game in games:
+                # Определяем статус по наличию счета
+                has_score = (game.get("pts_home") is not None and
+                             game.get("pts_away") is not None and
+                             game.get("pts_home") > 0 and
+                             game.get("pts_away") > 0)
 
-        query += " ORDER BY game_date DESC LIMIT ? OFFSET ?"
-        params.extend([limit, skip])
+                status = "finished" if has_score else "scheduled"
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+                # Получаем счет (если есть)
+                home_score = None
+                away_score = None
+                if has_score:
+                    home_score = int(float(game.get("pts_home"))) if game.get("pts_home") else None
+                    away_score = int(float(game.get("pts_away"))) if game.get("pts_away") else None
 
-        matches = []
-        for row in rows:
-            game = dict(row)
-            # Извлекаем числовой ID из строки вида "ESPN_401810646"
-            game_id_str = game.get("game_id", "0")
-            try:
-                if "ESPN_" in game_id_str:
-                    game_id = int(game_id_str.replace("ESPN_", ""))
-                else:
-                    game_id = int(game_id_str)
-            except:
-                continue  # Пропускаем если ID не конвертируется
+                # Парсим дату
+                game_date = game.get("game_date")
+                date_str = None
+                if game_date:
+                    if isinstance(game_date, datetime):
+                        date_str = game_date.isoformat()
+                    elif isinstance(game_date, str):
+                        try:
+                            if ' ' in game_date:
+                                date_obj = datetime.strptime(game_date, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                date_obj = datetime.fromisoformat(game_date)
+                            date_str = date_obj.isoformat()
+                        except:
+                            date_str = game_date
 
-            # Определяем статус матча
-            has_score = game.get("pts_home") is not None and game.get("pts_away") is not None
-            status = "finished" if has_score else "scheduled"
+                # Генерируем уникальный ID
+                game_id_val = game.get("game_id")
+                season_id_val = game.get("season_id")
+                unique_key = f"{game_id_val}_{season_id_val}"
+                match_id = abs(hash(unique_key)) % (10 ** 8)
 
-            match = {
-                "id": game_id,
-                "date": game.get("game_date", ""),
-                "status": status,
-                # Поля, которые ожидает Pydantic схема MatchResponse
-                "home_team_id": game.get("team_id_home", 0),
-                "away_team_id": game.get("team_id_away", 0),
-                "home_score": game.get("pts_home"),
-                "away_score": game.get("pts_away"),
-                # Добавьте эти поля, если они нужны и есть в БД, иначе установите значения по умолчанию
-                "created_by_id": 1,  # Значение по умолчанию
-                "created_at": game.get("game_date", "")
-            }
-            matches.append(match)
+                original_id = match_id
+                counter = 1
+                while match_id in used_ids:
+                    match_id = (original_id + counter) % (10 ** 8)
+                    counter += 1
+                used_ids.add(match_id)
 
-        return matches
+                home_team_name = game.get("home_team_name")
+                away_team_name = game.get("away_team_name")
+
+                if not home_team_name:
+                    home_team_name = game.get("home_team_abbrev", f"Team {game.get('team_id_home')}")
+                if not away_team_name:
+                    away_team_name = game.get("away_team_abbrev", f"Team {game.get('team_id_away')}")
+
+                match = {
+                    "id": match_id,
+                    "game_id": game.get("game_id"),
+                    "date": date_str,
+                    "status": status,
+                    "home_team_id": int(float(game.get("team_id_home"))) if game.get("team_id_home") else 0,
+                    "away_team_id": int(float(game.get("team_id_away"))) if game.get("team_id_away") else 0,
+                    "home_team": {
+                        "id": int(float(game.get("team_id_home"))) if game.get("team_id_home") else 0,
+                        "name": home_team_name,
+                        "abbrev": game.get("home_team_abbrev", f"T{game.get('team_id_home')}")
+                    },
+                    "away_team": {
+                        "id": int(float(game.get("team_id_away"))) if game.get("team_id_away") else 0,
+                        "name": away_team_name,
+                        "abbrev": game.get("away_team_abbrev", f"T{game.get('team_id_away')}")
+                    },
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "season": game.get("season_id"),
+                    "season_type": game.get("season_type")
+                }
+                matches.append(match)
+
+            return matches
+
+        except Exception as e:
+            print(f"Error getting matches: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def get_match_by_id(self, match_id: int) -> Optional[Dict[str, Any]]:
         """Получение матча по ID"""
-        cursor = self.conn.cursor()
-
-        # Пробуем найти по числовому ID или по строковому ESPN_ID
-        cursor.execute(
-            "SELECT * FROM game WHERE game_id = ? OR game_id = ?",
-            (str(match_id), f"ESPN_{match_id}")
-        )
-        row = cursor.fetchone()
-
-        if not row:
+        try:
+            # Получаем все матчи и фильтруем
+            matches = self.get_all_matches(limit=10000)
+            for match in matches:
+                if match["id"] == match_id:
+                    return match
             return None
 
-        game = dict(row)
-
-        # Определяем статус матча
-        has_score = game.get("pts_home") is not None and game.get("pts_away") is not None
-        status = "finished" if has_score else "scheduled"
-
-        return {
-            "id": match_id,
-            "date": game.get("game_date", ""),
-            "status": status,
-            "home_team_id": game.get("team_id_home", 0),
-            "away_team_id": game.get("team_id_away", 0),
-            "home_score": game.get("pts_home"),
-            "away_score": game.get("pts_away"),
-            "created_by_id": 1,
-            "created_at": game.get("game_date", "")
-        }
+        except Exception as e:
+            print(f"Ошибка получения матча по ID: {e}")
+            return None
 
     def create_match(self, match_data, user_id: int) -> Dict[str, Any]:
         """Создание нового матча"""
-        # Здесь должна быть вставка в БД
-        # Для простоты возвращаем заглушку
-        return {
-            "id": 0,
-            "date": match_data.date.isoformat() if hasattr(match_data, 'date') else str(match_data.get('date')),
-            "status": "scheduled",
-            "home_team_id": match_data.home_team_id,
-            "away_team_id": match_data.away_team_id,
-            "home_score": None,
-            "away_score": None,
-            "created_by_id": user_id,
-            "created_at": datetime.utcnow().isoformat()
-        }
+        raise NotImplementedError("Метод create_match еще не реализован")
 
-    def update_match_result(self, match_id: int, home_score: int, away_score: int, user_id: int) -> Optional[
-        Dict[str, Any]]:
+    def update_match_result(self, match_id: int, home_score: int, away_score: int, user_id: int) -> Dict[str, Any]:
         """Обновление результата матча"""
-        # Здесь должно быть обновление в БД
-        match = self.get_match_by_id(match_id)
-        if not match:
-            return None
+        raise NotImplementedError("Метод update_match_result еще не реализован")
 
-        match["home_score"] = home_score
-        match["away_score"] = away_score
-        match["status"] = "finished"
-        return match
-
-    def delete_match(self, match_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    def delete_match(self, match_id: int, user_id: int) -> Dict[str, Any]:
         """Удаление матча"""
-        # Здесь должно быть удаление из БД
-        match = self.get_match_by_id(match_id)
-        return match
+        raise NotImplementedError("Метод delete_match еще не реализован")

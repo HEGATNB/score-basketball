@@ -1,4 +1,4 @@
-import { Prediction } from "../model/types";
+import type { Prediction } from "../model/types";
 
 // "Бэкенд" функция: принимает ID команд, возвращает прогноз с задержкой
 export async function calculatePrediction(t1: number, t2: number): Promise<Prediction> {
