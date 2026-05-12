@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiRequest, User, LoginResponse } from '@/shared/api/client';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { apiRequest, type AuthUser } from '@/shared/api/client';
+import { authService } from './auth.service';
 
 interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  user: AuthUser | null;
+  login: (identifier: string, password: string) => Promise<boolean>;
+  register: (data: { email: string; password: string; name?: string; username?: string }) => Promise<boolean>;
   logout: () => void;
   isAdmin: boolean;
   isOperator: boolean;
@@ -13,49 +15,46 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Проверяем, есть ли сохраненный пользователь
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    
-    if (savedUser && token) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Ошибка парсинга пользователя', e);
-        localStorage.removeItem('user');
-        localStorage.removeItem('token');
-      }
+    if (!authService.isAuthenticated()) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    apiRequest<AuthUser>('/auth/me', undefined, false)
+      .then((profile) => setUser(profile))
+      .catch(() => authService.logout())
+      .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (identifier: string, password: string) => {
     try {
-      const data = await apiRequest<LoginResponse>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (data.user && data.token) {
-        setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        localStorage.setItem('token', data.token);
-        return true;
-      }
-    } catch (e) {
-      console.error('Ошибка входа:', e);
+      const result = await authService.login({ identifier, password });
+      setUser(result.user);
+      return true;
+    } catch (error) {
+      console.error('Login failed', error);
+      return false;
     }
-    return false;
+  };
+
+  const register = async (data: { email: string; password: string; name?: string; username?: string }) => {
+    try {
+      const result = await authService.register(data);
+      setUser(result.user);
+      return true;
+    } catch (error) {
+      console.error('Register failed', error);
+      throw error;
+    }
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    authService.logout();
   };
 
   return (
@@ -63,6 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         login,
+        register,
         logout,
         isAdmin: user?.role === 'admin',
         isOperator: user?.role === 'operator' || user?.role === 'admin',
@@ -77,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    throw new Error('useAuth must be used inside AuthProvider');
   }
   return context;
 };

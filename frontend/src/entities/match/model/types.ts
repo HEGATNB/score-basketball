@@ -1,8 +1,12 @@
+import type { Team } from "@/entities/team/model/types";
+
 export type Match = {
   id: number;
   date: string; // ISO строка
-  homeTeam: { id: number; name: string };
-  awayTeam: { id: number; name: string };
+  homeTeam: Team;
+  awayTeam: Team;
   status: "scheduled" | "finished";
+  homeScore?: number;
+  awayScore?: number;
   score?: { home: number; away: number };
 };

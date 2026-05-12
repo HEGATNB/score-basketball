@@ -3,27 +3,31 @@ from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 import os
 from dotenv import load_dotenv
-from passlib.context import CryptContext
+import bcrypt
 
 load_dotenv()
 
-# Конфигурация
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
 JWT_EXPIRES_IN = os.getenv("JWT_EXPIRES_IN", "7d")
 
-# Хеширование паролей
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 def get_password_hash(password: str) -> str:
-    """Хеширование пароля"""
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Проверка пароля"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception as e:
+        print(f"Ошибка проверки пароля: {e}")
+        return False
+
+# Парсинг данных из базы
 
 def parse_expires_in(expires_in: str) -> int:
-    """Парсинг строки типа '7d' в минуты"""
     if expires_in.endswith('d'):
         return int(expires_in[:-1]) * 24 * 60
     elif expires_in.endswith('h'):
@@ -54,8 +58,10 @@ class TokenPayload:
             role=data.get("role", "user")
         )
 
+# Генерация JWT
+
 def generate_token(payload: TokenPayload) -> str:
-    """Генерация JWT токена"""
+
     to_encode = payload.to_dict()
     minutes = parse_expires_in(JWT_EXPIRES_IN)
     expire = datetime.utcnow() + timedelta(minutes=minutes)
@@ -63,8 +69,9 @@ def generate_token(payload: TokenPayload) -> str:
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
     return encoded_jwt
 
+# Проверка JWT
+
 def verify_token(token: str) -> Optional[TokenPayload]:
-    """Проверка JWT токена"""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return TokenPayload.from_dict(payload)

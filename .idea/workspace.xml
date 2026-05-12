@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ad338a1b-d187-4e5b-b2d1-afb99a47c771" name="Changes" comment="SQL запросы вынесены в репозитории">
+      <change beforePath="$PROJECT_DIR$/backend/repositories/user_repository.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/repositories/user_repository.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;AkelllaPromax23&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/HEGATNB/kyrsach-basketball&quot;,
+    &quot;accountId&quot;: &quot;ae940674-64a2-4718-be68-5fd4338ca6a2&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="3B4aMOV0kRtmpKLv8XXbfUG45D8" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.generate_csv.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;feature/hegatnb&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Артём/Desktop/kyrsach-basketball&quot;
+  }
+}</component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-4762d8aabb82-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.30387.173" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ad338a1b-d187-4e5b-b2d1-afb99a47c771" name="Changes" comment="" />
+      <created>1773750748372</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1773750748372</updated>
+    </task>
+    <task id="LOCAL-00001" summary="Обновлена страница аналитики">
+      <option name="closed" value="true" />
+      <created>1777375262750</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1777375262751</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Разделена нормализация при обучении нейросети">
+      <option name="closed" value="true" />
+      <created>1777476595556</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1777476595556</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Рабочий фронтэнд и докер обновление">
+      <option name="closed" value="true" />
+      <created>1777892370803</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1777892370803</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Добавлена ру локализация">
+      <option name="closed" value="true" />
+      <created>1777909714455</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1777909714455</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Доработаны input-ы и локализация">
+      <option name="closed" value="true" />
+      <created>1777978419325</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1777978419325</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Исправлен импорт данных на главной странице">
+      <option name="closed" value="true" />
+      <created>1777980466593</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1777980466593</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Добавлен перевод для страниц аналитики и истории">
+      <option name="closed" value="true" />
+      <created>1777980985927</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1777980985927</updated>
+    </task>
+    <task id="LOCAL-00008" summary="SQL запросы вынесены в репозитории">
+      <option name="closed" value="true" />
+      <created>1778514250535</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1778514250535</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Обновлена страница аналитики" />
+    <MESSAGE value="Разделена нормализация при обучении нейросети" />
+    <MESSAGE value="Рабочий фронтэнд и докер обновление" />
+    <MESSAGE value="Добавлена ру локализация" />
+    <MESSAGE value="Доработаны input-ы и локализация" />
+    <MESSAGE value="Исправлен импорт данных на главной странице" />
+    <MESSAGE value="Добавлен перевод для страниц аналитики и истории" />
+    <MESSAGE value="SQL запросы вынесены в репозитории" />
+    <option name="LAST_COMMIT_MESSAGE" value="SQL запросы вынесены в репозитории" />
+  </component>
+</project>

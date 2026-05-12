@@ -1,39 +1,38 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import type { ReactNode } from 'react';
+import { motion, type HTMLMotionProps } from 'framer-motion';
 
-interface GlowingCardProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
+interface GlowingCardProps extends HTMLMotionProps<'div'> {
+  children: ReactNode;
   glowColor?: 'orange' | 'blue' | 'green' | 'purple';
   delay?: number;
 }
 
-export const GlowingCard: React.FC<GlowingCardProps> = ({
+const glowStyles = {
+  orange: 'border-[rgba(201,106,43,0.16)] shadow-[0_12px_28px_rgba(10,14,20,0.22)]',
+  blue: 'border-[rgba(96,125,150,0.16)] shadow-[0_12px_28px_rgba(10,14,20,0.22)]',
+  green: 'border-[rgba(114,139,116,0.16)] shadow-[0_12px_28px_rgba(10,14,20,0.22)]',
+  purple: 'border-[rgba(141,107,93,0.16)] shadow-[0_12px_28px_rgba(10,14,20,0.22)]',
+};
+
+export function GlowingCard({
   children,
   className = '',
   glowColor = 'orange',
   delay = 0,
   ...props
-}) => {
-  const glowColors = {
-    orange: 'hover:shadow-orange-500/30',
-    blue: 'hover:shadow-blue-500/30',
-    green: 'hover:shadow-green-500/30',
-    purple: 'hover:shadow-purple-500/30',
-  };
-
+}: GlowingCardProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay }}
-      whileHover={{ y: -6 }}
-      className={`relative overflow-hidden rounded-2xl bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 hover:border-orange-500/30 transition-all duration-300 shadow-xl ${glowColors[glowColor]} ${className}`}
+      transition={{ duration: 0.45, delay }}
+      whileHover={{ y: -1 }}
+      className={`group relative overflow-hidden rounded-[18px] border bg-[rgba(8,10,14,0.82)] backdrop-blur-xl ${glowStyles[glowColor]} ${className}`}
       {...props}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-      <div className="relative z-10 p-6">
-        {children}
-      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,248,238,0.02),transparent_18%,transparent_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(255,248,238,0.1)] to-transparent" />
+      <div className="relative z-10">{children}</div>
     </motion.div>
   );
-};
+}
