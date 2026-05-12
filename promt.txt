@@ -1,0 +1,19 @@
+Act as an expert frontend developer. I am providing you with the source code of my existing single-page application (SPA). 
+Your task is to entirely redesign my existing site using a specific "Cinematic Liquid-Glass Basketball" design system, while keeping my core functionality, text, and routing intact.
+
+Here are the strict design rules you must apply to my code:
+
+1. Tech Stack & Setup: Keep React/Babel via CDN. Ensure Tailwind CSS is included. The body must be bg-black with white text.
+2. Fonts: Add Google Fonts 'Instrument Serif' (for headings, always italic) and 'Barlow' (for body text). Add default border-radius: 9999px to Tailwind config.
+3. Design System (Liquid Glass): Add this CSS block to the head:
+.liquid-glass { background: rgba(255,255,255,0.01); background-blend-mode: luminosity; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: none; box-shadow: inset 0 1px 1px rgba(255,255,255,0.1); }
+.liquid-glass::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.4px; background: linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+.liquid-glass-strong { backdrop-filter: blur(50px); box-shadow: 4px 4px 4px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); }
+4. Layout: 
+- Wrap my main sections in full-height containers (min-h-screen). 
+- Add looping background videos to these sections using <video autoPlay muted playsInline loop style={{opacity: 0.5, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0}} />. Use dummy MP4 URLs from Pixabay or similar.
+- Ensure all content sits in a relative z-10 container above the video.
+5. Components: Convert my existing cards, navbars, or chips into rounded elements using the "liquid-glass" class. Convert primary buttons to "liquid-glass-strong".
+6. Animations: Use Framer Motion to add basic entrance animations (fade in, blur in, or slight slide up) to my headings and cards.
+
+CRITICAL: Output ONLY the fully updated, ready-to-run HTML file. Do not include markdown formatting like ```html. Start directly with <!DOCTYPE html>.

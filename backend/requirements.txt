@@ -1,0 +1,31 @@
+# Основные зависимости
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+pydantic==2.5.0
+pydantic[email]
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+requests==2.31.0
+
+# Аутентификация
+bcrypt==4.0.1
+
+# Планировщик задач
+APScheduler==3.10.4
+
+# Redis для кэширования и черного списка токенов
+redis==5.0.1
+
+# Data Science зависимости
+numpy==1.26.0
+pandas==2.1.4
+scikit-learn==1.3.2
+tensorflow==2.16.1
+beautifulsoup4==4.12.2
+
+# Дополнительные утилиты
+httpx==0.25.1
+aiofiles==23.2.1
