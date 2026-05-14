@@ -15,6 +15,8 @@ import { Marquee } from '@/shared/ui/Marquee';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { MatchCard } from '@/shared/ui/MatchCard';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
+import { LivePanel } from '@/shared/ui/LivePanel';
+import { liveApi, type LiveNewsItem } from '@/shared/api/live';
 
 const HERO_FRAMES = [
   'https://images.pexels.com/photos/2834917/pexels-photo-2834917.jpeg?auto=compress&cs=tinysrgb&w=1600',
@@ -38,45 +40,22 @@ const CHALLENGES = [
   { id: 'c4', icon: '🏆', title: 'ЧЕМПИОН НЕДЕЛИ', desc: 'Топ-10 в недельном рейтинге', progress: 100, value: 'РАЗБЛОКИРОВАНО', reward: '+1000 XP', color: '#ffb800' },
 ];
 
-const NEWS = [
-  {
-    id: 'n1',
-    cat: 'АНАЛИТИКА',
-    time: '2 часа назад',
-    title: 'Почему Celtics доминируют дома: разбор',
-    excerpt: 'Шесть выигранных матчей подряд в TD Garden — разбираем темп игры, защиту по периметру и роль Porziņģis.',
-    thumb: 'https://images.pexels.com/photos/2834917/pexels-photo-2834917.jpeg?auto=compress&cs=tinysrgb&w=900',
-    featured: true,
-  },
-  {
-    id: 'n2',
-    cat: 'ТРАВМЫ',
-    time: '5 часов назад',
-    title: 'Porziņģis под вопросом на матч с Lakers',
-    thumb: 'https://images.pexels.com/photos/1080884/pexels-photo-1080884.jpeg?auto=compress&cs=tinysrgb&w=900',
-  },
-  {
-    id: 'n3',
-    cat: 'РАЗБОР',
-    time: '8 часов назад',
-    title: 'Step-back Дончича: как остановить',
-    thumb: 'https://images.pexels.com/photos/2304442/pexels-photo-2304442.jpeg?auto=compress&cs=tinysrgb&w=900',
-  },
-  {
-    id: 'n4',
-    cat: 'ТРЕНДЫ',
-    time: '12 часов назад',
-    title: 'ИИ-точность за неделю: 78%',
-    thumb: 'https://images.pexels.com/photos/8007522/pexels-photo-8007522.jpeg?auto=compress&cs=tinysrgb&w=900',
-  },
-  {
-    id: 'n5',
-    cat: 'ИГРОКИ',
-    time: '1 день назад',
-    title: 'Йокич: 10-й трипл-дабл за сезон',
-    thumb: 'https://images.pexels.com/photos/2444852/pexels-photo-2444852.jpeg?auto=compress&cs=tinysrgb&w=900',
-  },
-];
+function relativeTime(iso: string | null): string {
+  if (!iso) return '';
+  try {
+    const ts = new Date(iso).getTime();
+    const diff = Math.max(0, Date.now() - ts);
+    const min = Math.floor(diff / 60_000);
+    if (min < 1) return 'только что';
+    if (min < 60) return `${min} мин назад`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} ч назад`;
+    const d = Math.floor(hr / 24);
+    return `${d} д назад`;
+  } catch {
+    return '';
+  }
+}
 
 export const HomePage = () => {
   const { user } = useAuth();
@@ -86,6 +65,7 @@ export const HomePage = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const [stats, setStats] = useState<PredictStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [news, setNews] = useState<LiveNewsItem[]>([]);
 
   const playersRailRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +98,9 @@ export const HomePage = () => {
       }
     };
     load();
+
+    // News (independent — non-blocking, falls back to empty)
+    liveApi.news(6).then(setNews).catch(() => setNews([]));
   }, []);
 
   const upcoming = useMemo(() => matches.filter((m) => m.status !== 'finished').slice(0, 6), [matches]);
@@ -135,17 +118,6 @@ export const HomePage = () => {
 
   const accuracy = Math.round(stats?.accuracy ?? 0);
   const totalPredictions = stats?.totalPredictions ?? 0;
-
-  const liveRows = upcoming.slice(0, 3);
-  const fakeLiveScore = (i: number) => {
-    // Cosmetic scoreboard — not from live API. Same approach as the SCORE demo.
-    const base = 58 + i * 6;
-    const diff = (i + 1) * 4;
-    const sa = base + (i % 2 === 0 ? diff : 0);
-    const sb = base + (i % 2 === 0 ? 0 : diff);
-    const quarters = ['Q4 · 4:23', 'Q3 · 1:02', 'Q2 · 6:18'];
-    return { sa, sb, q: quarters[i] || 'Q1 · 8:00' };
-  };
 
   return (
     <>
@@ -252,77 +224,8 @@ export const HomePage = () => {
               </div>
             </div>
 
-            {/* Live side panel */}
-            <aside className="panel">
-              <h3
-                className="m-0 mb-4 flex items-center justify-between font-mono text-[11px] uppercase text-[var(--text-3)]"
-                style={{ letterSpacing: '0.2em' }}
-              >
-                <span>Live сейчас</span>
-                <span className="inline-flex items-center gap-1.5 text-[var(--danger)]">
-                  <span className="pulse-dot" />
-                  LIVE
-                </span>
-              </h3>
-              {liveRows.length > 0 ? (
-                liveRows.map((m, i) => {
-                  const ls = fakeLiveScore(i);
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => navigate(`/matches/${m.id}`)}
-                      className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-[var(--line)] py-3.5 first:border-t-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <TeamMark team={m.homeTeam} size="sm" />
-                        <div className="text-left">
-                          <div className="text-[13px] font-semibold">{m.homeTeam.abbrev}</div>
-                          <div
-                            className="font-display text-2xl leading-none"
-                            style={{ color: ls.sa > ls.sb ? 'var(--accent)' : 'var(--text)' }}
-                          >
-                            {ls.sa}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                        <span
-                          className="font-mono text-[10px] uppercase text-[var(--text-3)]"
-                          style={{ letterSpacing: '0.1em' }}
-                        >
-                          {ls.q}
-                        </span>
-                        <span className="font-mono text-[9px] text-[var(--danger)]">● LIVE</span>
-                      </div>
-                      <div className="flex flex-row-reverse items-center gap-2.5">
-                        <TeamMark team={m.awayTeam} size="sm" />
-                        <div className="text-right">
-                          <div className="text-[13px] font-semibold">{m.awayTeam.abbrev}</div>
-                          <div
-                            className="font-display text-2xl leading-none"
-                            style={{ color: ls.sb > ls.sa ? 'var(--accent)' : 'var(--text)' }}
-                          >
-                            {ls.sb}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="py-6 text-center text-sm text-[var(--text-3)]">Сейчас нет live матчей.</p>
-              )}
-              <div className="mt-4 flex items-center justify-between border-t border-[var(--line)] pt-4">
-                <span className="text-xs text-[var(--text-3)]">Полный счёт и трансляции</span>
-                <button
-                  onClick={() => navigate('/matches')}
-                  className="btn btn-ghost"
-                  style={{ padding: '8px 12px', fontSize: 12 }}
-                >
-                  Все матчи <span className="arrow">→</span>
-                </button>
-              </div>
-            </aside>
+            {/* Live side panel — real ESPN data with auto-refresh */}
+            <LivePanel maxRows={4} />
           </div>
         </div>
       </section>
@@ -656,12 +559,13 @@ export const HomePage = () => {
         </div>
       </section>
 
-      {/* ============== CHALLENGES ============== */}
+      {/* ============== CHALLENGES (demo — only for signed-in users) ============== */}
+      {user && (
       <section className="section-tight">
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЧЕЛЛЕНДЖИ И БЕЙДЖИ</span>
+              <span className="eyebrow"><span className="dot" />ЧЕЛЛЕНДЖИ И БЕЙДЖИ · DEMO</span>
               <h2>
                 СОБИРАЙ <em>ОЧКИ</em>,<br />ПОДНИМАЙ ЛИГУ
               </h2>
@@ -703,73 +607,90 @@ export const HomePage = () => {
           </div>
         </div>
       </section>
+      )}
 
       {/* ============== NEWS ============== */}
-      <section className="section-tight">
-        <div className="container-x">
-          <div className="section-head">
-            <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЛЕНТА · ANALYTICS</span>
-              <h2>
-                ЧТО ЧИТАТЬ<br /><em>ПЕРЕД</em> ПРОГНОЗОМ
-              </h2>
-            </div>
-            <div className="flex flex-col items-end gap-4">
-              <p className="lead">Аналитика, травмы, разборы матчей. Чтобы бросать прогноз не вслепую.</p>
-              <div className="actions">
-                <button className="btn btn-ghost">Аналитика</button>
-                <button className="btn btn-ghost">Травмы</button>
-                <button className="btn">Вся лента <span className="arrow">→</span></button>
+      {news.length > 0 && (
+        <section className="section-tight">
+          <div className="container-x">
+            <div className="section-head">
+              <div className="flex flex-col gap-3">
+                <span className="eyebrow"><span className="dot" />ЛЕНТА · ESPN NEWS</span>
+                <h2>
+                  ЧТО ЧИТАТЬ<br /><em>ПЕРЕД</em> ПРОГНОЗОМ
+                </h2>
               </div>
+              <p className="lead">
+                Свежие заголовки прямо из ESPN. Аналитика, травмы, разборы — обновляется автоматически.
+              </p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr_1fr]">
+              {news.slice(0, 5).map((n, idx) => {
+                const featured = idx === 0;
+                const cat = n.category || 'NBA';
+                const rt = relativeTime(n.published);
+                return (
+                  <a
+                    key={n.id || idx}
+                    href={n.url || '#'}
+                    target={n.url ? '_blank' : undefined}
+                    rel="noopener noreferrer"
+                    className={`card cursor-pointer overflow-hidden ${featured ? 'lg:row-span-2' : ''}`}
+                    style={{ borderRadius: 'var(--r-md)' }}
+                  >
+                    <div
+                      className="relative"
+                      style={{
+                        height: featured ? 320 : 220,
+                        backgroundImage: n.thumb
+                          ? `url(${n.thumb})`
+                          : 'linear-gradient(135deg, rgba(255,90,31,0.18), rgba(20,20,28,0.8))',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}
+                    >
+                      <div
+                        aria-hidden
+                        className="absolute inset-0"
+                        style={{
+                          background:
+                            'linear-gradient(180deg, transparent 40%, rgba(8,8,11,0.92))',
+                        }}
+                      />
+                    </div>
+                    <div className={featured ? 'p-6' : 'p-5'}>
+                      <div
+                        className="mb-3 flex items-center gap-2.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
+                        style={{ letterSpacing: '0.16em' }}
+                      >
+                        <span style={{ color: 'var(--accent)' }}>{cat}</span>
+                        {rt && (
+                          <>
+                            <span>·</span>
+                            <span>{rt}</span>
+                          </>
+                        )}
+                      </div>
+                      <h4
+                        className="m-0 mb-2.5 font-display uppercase"
+                        style={{ fontSize: featured ? '32px' : '20px', lineHeight: 1.1 }}
+                      >
+                        {n.title}
+                      </h4>
+                      {featured && n.description && (
+                        <p className="line-clamp-3 text-[13px] leading-[1.5] text-[var(--text-3)]">
+                          {n.description}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                );
+              })}
             </div>
           </div>
-
-          <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr_1fr]">
-            {NEWS.map((n) => (
-              <article
-                key={n.id}
-                className={`card cursor-pointer ${n.featured ? 'lg:row-span-2' : ''}`}
-                style={{ borderRadius: 'var(--r-md)' }}
-              >
-                <div
-                  className="relative"
-                  style={{
-                    height: n.featured ? 320 : 240,
-                    backgroundImage: `url(${n.thumb})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }}
-                >
-                  <div
-                    aria-hidden
-                    className="absolute inset-0"
-                    style={{ background: 'linear-gradient(180deg, transparent 40%, rgba(8,8,11,0.9))' }}
-                  />
-                </div>
-                <div className={n.featured ? 'p-6' : 'p-5'}>
-                  <div
-                    className="mb-3 flex items-center gap-2.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-                    style={{ letterSpacing: '0.16em' }}
-                  >
-                    <span style={{ color: 'var(--accent)' }}>{n.cat}</span>
-                    <span>·</span>
-                    <span>{n.time}</span>
-                  </div>
-                  <h4
-                    className="m-0 mb-2.5 font-display uppercase"
-                    style={{ fontSize: n.featured ? '36px' : '22px', lineHeight: 1.05 }}
-                  >
-                    {n.title}
-                  </h4>
-                  {n.featured && (
-                    <p className="text-[13px] leading-[1.5] text-[var(--text-3)]">{n.excerpt}</p>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ============== CTA: Sign-in invite ============== */}
       {!user && (

@@ -5,6 +5,7 @@ import { useAuth } from './providers/AuthProvider';
 import { BrandLogo } from '@/shared/ui/BrandLogo';
 import { Footer } from '@/shared/ui/Footer';
 import { CookieAccept } from '@/shared/ui/CookieAccept';
+import { SearchPalette } from '@/shared/ui/SearchPalette';
 
 type NavItem = {
   to: string;
@@ -27,13 +28,27 @@ export const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     setMobileOpen(false);
+    setSearchOpen(false);
     if (!location.hash) {
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     }
   }, [location.pathname, location.hash]);
+
+  // Global hotkey: Cmd/Ctrl + K opens the search palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const displayName = user?.name || user?.username || 'A';
 
@@ -75,13 +90,24 @@ export const Layout = () => {
 
           {/* Right side */}
           <div className="hidden items-center gap-2.5 lg:flex">
-            <div className="hidden items-center gap-2 rounded-pill border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-[13px] text-[var(--text-3)] xl:inline-flex">
+            <button
+              onClick={() => setSearchOpen(true)}
+              title="Поиск (⌘K)"
+              className="hidden items-center gap-2 rounded-pill border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-[13px] text-[var(--text-3)] transition hover:border-[var(--line-strong)] hover:text-[var(--text)] xl:inline-flex"
+            >
               <Search className="h-3.5 w-3.5" />
               <span>Поиск</span>
               <kbd className="rounded-sm border border-[var(--line-strong)] bg-[var(--surface-3)] px-1.5 py-0.5 font-mono text-[10px]">
                 ⌘K
               </kbd>
-            </div>
+            </button>
+            <button
+              onClick={() => setSearchOpen(true)}
+              aria-label="Поиск"
+              className="btn btn-icon xl:hidden"
+            >
+              <Search className="h-4 w-4" />
+            </button>
 
             {user ? (
               <>
@@ -170,6 +196,7 @@ export const Layout = () => {
 
       <Footer />
       <CookieAccept />
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 };

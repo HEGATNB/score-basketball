@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, Cpu, MapPin, Sparkles, Trophy } from 'lucide-react
 import { apiRequest, type Match } from '@/shared/api/client';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
+import { MatchLiveStats } from '@/shared/ui/MatchLiveStats';
 
 function formatDate(date: string) {
   try {
@@ -243,6 +244,11 @@ export const MatchPage = () => {
               Прогноз
             </Link>
           </div>
+        </div>
+
+        {/* Live / box-score from ESPN — renders only if we can match the event */}
+        <div className="mt-10">
+          <MatchLiveStats match={match} />
         </div>
       </div>
     </section>

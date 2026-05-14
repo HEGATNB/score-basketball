@@ -11,7 +11,7 @@ from tensorflow.keras.models import load_model
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
-from controllers import auth, teams, matches, predictions, players, home
+from controllers import auth, teams, matches, predictions, players, home, live
 from scripts.update_data import update_db_with_new_games
 from scripts.train_model import train_model
 from database import engine, Base, get_db
@@ -367,6 +367,7 @@ app.include_router(matches.router, prefix="/api/matches", tags=["matches"])
 app.include_router(predictions.router, prefix="/api", tags=["predictions"])
 app.include_router(players.router, prefix="/api/players", tags=["players"])
 app.include_router(home.router, prefix="/api/home", tags=["home"])
+app.include_router(live.router, prefix="/api/live", tags=["live"])
 
 # РОУТЫ БЕЗ API
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
