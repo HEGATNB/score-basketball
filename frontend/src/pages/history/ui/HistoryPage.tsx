@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowUpRight,
@@ -20,9 +20,34 @@ import { useAuth } from '@/app/providers/AuthProvider';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 
+interface CategoryStats {
+  n: number;
+  correct: number;
+  pct: number | null;
+}
+
+interface UserStats {
+  totalPredictions: number;
+  completedPredictions: number;
+  correctPredictions: number;
+  accuracy: number;
+  currentStreak: number;
+  bestStreak: number;
+  totalXp: number;
+  rank: number | null;
+  lastOutcomes: Array<'W' | 'L' | '?'>;
+  categories: {
+    highConfidence: CategoryStats;
+    lowConfidence: CategoryStats;
+    underdog: CategoryStats;
+    favourite: CategoryStats;
+  };
+}
+
 export const HistoryPage = () => {
   const { user, logout } = useAuth();
   const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,35 +55,18 @@ export const HistoryPage = () => {
       setLoading(false);
       return;
     }
-    apiRequest<Prediction[]>('/predictions/my', undefined, false)
-      .then(setPredictions)
-      .catch((e) => console.error(e))
-      .finally(() => setLoading(false));
+
+    const load = async () => {
+      const [preds, st] = await Promise.all([
+        apiRequest<Prediction[]>('/predictions/my', undefined, false).catch(() => []),
+        apiRequest<UserStats>('/predictions/my/stats', undefined, false).catch(() => null),
+      ]);
+      setPredictions(preds);
+      setStats(st);
+      setLoading(false);
+    };
+    load();
   }, [user]);
-
-  const avgConfidence = useMemo(
-    () =>
-      predictions.length > 0
-        ? predictions.reduce((sum, p) => sum + p.confidence, 0) / predictions.length
-        : 0,
-    [predictions],
-  );
-
-  // Mock streak based on prediction count for demo accounts. Real streak would
-  // come from backend, here it's cosmetic.
-  const streak = useMemo(() => {
-    if (!predictions.length) return 0;
-    return Math.min(11, Math.max(1, Math.round(predictions.length / 3)));
-  }, [predictions]);
-
-  // Last 20 outcomes (cosmetic — backend doesn't expose win/loss yet, we mark
-  // every other as a "win" so the spark chart looks alive).
-  const games = useMemo(() => {
-    const count = Math.min(20, Math.max(8, predictions.length));
-    return Array.from({ length: count }, (_, i) =>
-      (i + 1) % 3 === 0 ? 'L' : 'W',
-    );
-  }, [predictions.length]);
 
   if (!user) {
     return (
@@ -99,14 +107,66 @@ export const HistoryPage = () => {
   }
 
   const displayName = user.name || user.username || 'Игрок';
-  const accuracyPct = Math.round(avgConfidence);
-  const rank = 47; // cosmetic — would come from /leaderboard/me
+  const accuracyPct = stats ? Math.round(stats.accuracy) : 0;
+  const streak = stats?.currentStreak ?? 0;
+  const bestStreak = stats?.bestStreak ?? 0;
+  const totalXp = stats?.totalXp ?? 0;
+  const rank = stats?.rank ?? null;
+  const completed = stats?.completedPredictions ?? 0;
+  const games = stats?.lastOutcomes ?? [];
 
   const ROLE_LABEL: Record<string, string> = {
     admin: 'Admin',
     operator: 'Operator',
     user: 'User',
   };
+
+  // Weakness/strength rows from real category data
+  type CategoryRow = { l: string; v: string; color: string };
+  const weaknesses: CategoryRow[] = stats
+    ? [
+        ...(stats.categories.underdog.pct !== null
+          ? [{
+              l: 'Андердоги',
+              v: `${stats.categories.underdog.pct}% · ${stats.categories.underdog.correct}/${stats.categories.underdog.n}`,
+              color:
+                stats.categories.underdog.pct >= 50
+                  ? 'var(--ok)'
+                  : 'var(--danger)',
+            }]
+          : []),
+        ...(stats.categories.favourite.pct !== null
+          ? [{
+              l: 'Фавориты',
+              v: `${stats.categories.favourite.pct}% · ${stats.categories.favourite.correct}/${stats.categories.favourite.n}`,
+              color:
+                stats.categories.favourite.pct >= 60
+                  ? 'var(--ok)'
+                  : 'var(--gold)',
+            }]
+          : []),
+        ...(stats.categories.highConfidence.pct !== null
+          ? [{
+              l: 'Высокая уверенность ИИ (≥65%)',
+              v: `${stats.categories.highConfidence.pct}% · ${stats.categories.highConfidence.correct}/${stats.categories.highConfidence.n}`,
+              color:
+                stats.categories.highConfidence.pct >= 65
+                  ? 'var(--ok)'
+                  : 'var(--gold)',
+            }]
+          : []),
+        ...(stats.categories.lowConfidence.pct !== null
+          ? [{
+              l: 'Низкая уверенность ИИ (≤55%)',
+              v: `${stats.categories.lowConfidence.pct}% · ${stats.categories.lowConfidence.correct}/${stats.categories.lowConfidence.n}`,
+              color:
+                stats.categories.lowConfidence.pct >= 50
+                  ? 'var(--gold)'
+                  : 'var(--danger)',
+            }]
+          : []),
+      ]
+    : [];
 
   return (
     <>
@@ -216,8 +276,10 @@ export const HistoryPage = () => {
                 <span style={{ color: 'var(--accent)' }}>{accuracyPct || '—'}</span>
                 {accuracyPct ? <span className="text-xl text-[var(--text-3)]">%</span> : null}
               </div>
-              <div className="mt-2 font-mono text-[10px]" style={{ color: 'var(--ok)' }}>
-                ↑ обходишь 71% игроков
+              <div className="mt-2 font-mono text-[10px] text-[var(--text-3)]">
+                {completed > 0
+                  ? `${completed} матчей завершено`
+                  : 'нет завершённых матчей'}
               </div>
             </div>
             <div className="bg-[var(--surface)] p-5">
@@ -239,9 +301,9 @@ export const HistoryPage = () => {
                 <Trophy className="h-3 w-3" />
                 Рейтинг
               </div>
-              <div className="font-display text-5xl tab-num">#{rank}</div>
-              <div className="mt-2 font-mono text-[10px]" style={{ color: 'var(--ok)' }}>
-                ↑ 8 за неделю
+              <div className="font-display text-5xl tab-num">{rank ? `#${rank}` : '—'}</div>
+              <div className="mt-2 font-mono text-[10px] text-[var(--text-3)]">
+                {bestStreak > 0 ? `Рекорд стрика: ${bestStreak}` : 'из всех прогнозистов'}
               </div>
             </div>
             <div className="bg-[var(--surface)] p-5">
@@ -256,9 +318,11 @@ export const HistoryPage = () => {
                 className="font-display text-5xl tab-num"
                 style={{ color: 'var(--gold)' }}
               >
-                6 420
+                {totalXp.toLocaleString('ru')}
               </div>
-              <div className="mt-2 font-mono text-[10px] text-[var(--text-3)]">Лига 3 → 4: 580 XP</div>
+              <div className="mt-2 font-mono text-[10px] text-[var(--text-3)]">
+                50 XP за верный прогноз + бонусы
+              </div>
             </div>
           </div>
         </div>
@@ -297,13 +361,13 @@ export const HistoryPage = () => {
               >
                 Слабые и сильные стороны
               </h3>
+              {weaknesses.length === 0 ? (
+                <div className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3.5 text-[13px] text-[var(--text-3)]">
+                  Категории появятся после нескольких завершённых матчей.
+                </div>
+              ) : (
               <div className="flex flex-col gap-2.5">
-                {[
-                  { l: 'Андердоги в гостях', v: '34% · -28%', color: 'var(--danger)' },
-                  { l: 'OT и матчи на сирене', v: '41% · -21%', color: 'var(--danger)' },
-                  { l: 'Матчи без лидеров', v: '67% · +5%', color: 'var(--gold)' },
-                  { l: 'Дерби и top-вечера', v: '74% · +12%', color: 'var(--ok)' },
-                ].map((r) => (
+                {weaknesses.map((r) => (
                   <div
                     key={r.l}
                     className="flex items-center justify-between rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3.5"
@@ -318,6 +382,7 @@ export const HistoryPage = () => {
                   </div>
                 ))}
               </div>
+              )}
             </div>
 
             {/* Quick actions panel */}

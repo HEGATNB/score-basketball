@@ -66,6 +66,8 @@ export const HomePage = () => {
   const [stats, setStats] = useState<PredictStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<LiveNewsItem[]>([]);
+  const [myStats, setMyStats] = useState<any>(null);
+  const [myChallenges, setMyChallenges] = useState<any[]>([]);
 
   const playersRailRef = useRef<HTMLDivElement>(null);
 
@@ -102,6 +104,21 @@ export const HomePage = () => {
     // News (independent — non-blocking, falls back to empty)
     liveApi.news(6).then(setNews).catch(() => setNews([]));
   }, []);
+
+  // Real user stats + challenges — only if signed in
+  useEffect(() => {
+    if (!user) {
+      setMyStats(null);
+      setMyChallenges([]);
+      return;
+    }
+    apiRequest<any>('/predictions/my/stats', undefined, false)
+      .then(setMyStats)
+      .catch(() => setMyStats(null));
+    apiRequest<any[]>('/challenges/my', undefined, false)
+      .then((d) => setMyChallenges(Array.isArray(d) ? d : []))
+      .catch(() => setMyChallenges([]));
+  }, [user]);
 
   const upcoming = useMemo(() => matches.filter((m) => m.status !== 'finished').slice(0, 6), [matches]);
   const finished = useMemo(() => matches.filter((m) => m.status === 'finished').slice(0, 6), [matches]);
@@ -444,13 +461,13 @@ export const HomePage = () => {
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЛИЧНЫЙ КАБИНЕТ · DEMO</span>
+              <span className="eyebrow"><span className="dot" />ЛИЧНЫЙ КАБИНЕТ</span>
               <h2>
                 ТВОЯ <em>СТАТА</em><br />ЗА СЕЗОН
               </h2>
             </div>
             <p className="lead">
-              Превью кабинета. Реальные цифры — в твоей <a href="/history" className="underline" style={{ color: 'var(--accent)' }}>истории прогнозов</a>.
+              Реальные цифры на основе твоих прогнозов. Полная версия — в <a href="/history" className="underline" style={{ color: 'var(--accent)' }}>истории</a>.
             </p>
           </div>
 
@@ -469,19 +486,37 @@ export const HomePage = () => {
                 Точность прогнозов
               </h4>
               <div className="mb-2.5 font-display text-7xl leading-[0.9]">
-                <span style={{ color: 'var(--accent)' }}>62</span>
+                <span style={{ color: 'var(--accent)' }}>{Math.round(myStats?.accuracy ?? 0)}</span>
                 <span className="text-3xl text-[var(--text-3)]">%</span>
               </div>
               <p className="mb-7 max-w-[360px] text-sm text-[var(--text-3)]">
-                Ты обходишь 71% игроков платформы. Лучшая дисциплина — Восточный дивизион (74%).
+                {(myStats?.completedPredictions ?? 0) > 0
+                  ? `${myStats.correctPredictions}/${myStats.completedPredictions} верных из завершённых матчей.`
+                  : 'Сделай прогноз — после завершения матча здесь появится точность.'}
               </p>
 
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { num: '184', lbl: 'Всего прогнозов', diff: '↑ +12 на неделе' },
-                  { num: '7', lbl: 'Текущий стрик', diff: 'Рекорд: 11' },
-                  { num: '#47', lbl: 'Место в рейтинге', diff: '↑ 8 за неделю' },
-                  { num: '6 420', lbl: 'XP всего', diff: 'Лига 3 → 4: 580 XP' },
+                  {
+                    num: String(myStats?.totalPredictions ?? 0),
+                    lbl: 'Всего прогнозов',
+                    diff: `${myStats?.completedPredictions ?? 0} завершено`,
+                  },
+                  {
+                    num: String(myStats?.currentStreak ?? 0),
+                    lbl: 'Текущий стрик',
+                    diff: `Рекорд: ${myStats?.bestStreak ?? 0}`,
+                  },
+                  {
+                    num: myStats?.rank ? `#${myStats.rank}` : '—',
+                    lbl: 'Место в рейтинге',
+                    diff: 'по XP среди игроков',
+                  },
+                  {
+                    num: (myStats?.totalXp ?? 0).toLocaleString('ru'),
+                    lbl: 'XP всего',
+                    diff: '50 за верный + бонусы',
+                  },
                 ].map((s) => (
                   <div key={s.lbl} className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-4">
                     <div className="font-display text-3xl leading-none tab-num">{s.num}</div>
@@ -504,18 +539,34 @@ export const HomePage = () => {
                 className="m-0 mb-3.5 font-mono text-[11px] uppercase text-[var(--text-3)]"
                 style={{ letterSpacing: '0.2em' }}
               >
-                Последние 20 прогнозов
+                Последние {myStats?.lastOutcomes?.length || 0} прогнозов
               </h4>
-              <div className="spark mb-7">
-                {'WWLWWLWWWLWWLWWWWLWW'.split('').map((g, i) => (
-                  <div
-                    key={i}
-                    className={`bar ${g === 'W' ? 'win' : ''}`}
-                    style={{ height: g === 'W' ? `${50 + (i % 5) * 10}%` : `${20 + (i % 3) * 10}%` }}
-                    title={g === 'W' ? 'Угадано' : 'Мимо'}
-                  />
-                ))}
-              </div>
+              {(myStats?.lastOutcomes?.length ?? 0) === 0 ? (
+                <div className="mb-7 rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-5 text-[13px] text-[var(--text-3)]">
+                  Сделай хотя бы один прогноз — здесь появится спарк-чарт побед.
+                </div>
+              ) : (
+                <div className="spark mb-7">
+                  {(myStats?.lastOutcomes || []).map((g: string, i: number) => (
+                    <div
+                      key={i}
+                      className={`bar ${g === 'W' ? 'win' : ''}`}
+                      style={{
+                        height:
+                          g === 'W'
+                            ? `${50 + (i % 5) * 10}%`
+                            : g === 'L'
+                              ? `${20 + (i % 3) * 10}%`
+                              : '12%',
+                        opacity: g === '?' ? 0.35 : 1,
+                      }}
+                      title={
+                        g === 'W' ? 'Угадано' : g === 'L' ? 'Мимо' : 'Ожидает результата'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
 
               <h4
                 className="m-0 mb-3.5 font-mono text-[11px] uppercase text-[var(--text-3)]"
@@ -524,21 +575,51 @@ export const HomePage = () => {
                 Слабые стороны
               </h4>
               <div className="flex flex-col gap-2.5">
-                {[
-                  { l: 'Андердоги в гостях', v: '34% · -28%', color: 'var(--danger)' },
-                  { l: 'OT и матчи на сирене', v: '41% · -21%', color: 'var(--danger)' },
-                  { l: 'Матчи без лидеров', v: '67% · +5%', color: 'var(--gold)' },
-                ].map((r) => (
-                  <div
-                    key={r.l}
-                    className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-3.5"
-                  >
-                    <span className="text-[13px]">{r.l}</span>
-                    <span className="font-mono text-xs" style={{ color: r.color }}>
-                      {r.v}
-                    </span>
-                  </div>
-                ))}
+                {(() => {
+                  const cats = myStats?.categories;
+                  const rows: Array<{ l: string; v: string; color: string }> = [];
+                  if (cats) {
+                    if (cats.underdog?.pct !== null && cats.underdog?.pct !== undefined) {
+                      rows.push({
+                        l: 'Андердоги',
+                        v: `${cats.underdog.pct}% · ${cats.underdog.correct}/${cats.underdog.n}`,
+                        color: cats.underdog.pct >= 50 ? 'var(--ok)' : 'var(--danger)',
+                      });
+                    }
+                    if (cats.favourite?.pct !== null && cats.favourite?.pct !== undefined) {
+                      rows.push({
+                        l: 'Фавориты',
+                        v: `${cats.favourite.pct}% · ${cats.favourite.correct}/${cats.favourite.n}`,
+                        color: cats.favourite.pct >= 60 ? 'var(--ok)' : 'var(--gold)',
+                      });
+                    }
+                    if (cats.highConfidence?.pct !== null && cats.highConfidence?.pct !== undefined) {
+                      rows.push({
+                        l: 'ИИ уверен (≥65%)',
+                        v: `${cats.highConfidence.pct}% · ${cats.highConfidence.correct}/${cats.highConfidence.n}`,
+                        color: cats.highConfidence.pct >= 65 ? 'var(--ok)' : 'var(--gold)',
+                      });
+                    }
+                  }
+                  if (rows.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-3.5 text-[13px] text-[var(--text-3)]">
+                        Категории появятся, когда хотя бы один матч завершится.
+                      </div>
+                    );
+                  }
+                  return rows.map((r) => (
+                    <div
+                      key={r.l}
+                      className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-3.5"
+                    >
+                      <span className="text-[13px]">{r.l}</span>
+                      <span className="font-mono text-xs" style={{ color: r.color }}>
+                        {r.v}
+                      </span>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -552,7 +633,7 @@ export const HomePage = () => {
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЧЕЛЛЕНДЖИ И БЕЙДЖИ · DEMO</span>
+              <span className="eyebrow"><span className="dot" />ЧЕЛЛЕНДЖИ И БЕЙДЖИ</span>
               <h2>
                 СОБИРАЙ <em>ОЧКИ</em>,<br />ПОДНИМАЙ ЛИГУ
               </h2>
@@ -563,8 +644,8 @@ export const HomePage = () => {
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {CHALLENGES.map((c) => (
-              <article key={c.id} className="challenge-card">
+            {(myChallenges.length > 0 ? myChallenges : CHALLENGES).map((c) => (
+              <article key={c.id} className={`challenge-card ${c.locked ? 'opacity-60' : ''}`}>
                 <div
                   className="badge-icon"
                   style={{ background: `linear-gradient(135deg, ${c.color}, ${c.color}88)` }}
