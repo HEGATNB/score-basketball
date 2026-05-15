@@ -985,6 +985,76 @@
     box-shadow: 0 0 0 6px rgba(255, 56, 88, 0);
   }
 }
+
+/* ===== Soft reveal animations ===== */
+@keyframes scoreFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes scoreFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scoreSlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.reveal-up {
+  animation: scoreFadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.reveal-in {
+  animation: scoreFadeIn 0.6s ease-out both;
+}
+.reveal-right {
+  animation: scoreSlideRight 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-up,
+  .reveal-in,
+  .reveal-right {
+    animation: none !important;
+  }
+}
+
+/* Soft hover lift for card-ish elements */
+.lift {
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.3s,
+    box-shadow 0.3s;
+}
+.lift:hover {
+  transform: translateY(-4px);
+  border-color: var(--line-strong);
+}
+
+/* Subtle glow on hover for accent-cards */
+.glow-on-hover {
+  transition: box-shadow 0.4s, border-color 0.3s, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.glow-on-hover:hover {
+  border-color: var(--accent);
+  box-shadow: 0 24px 50px -18px rgba(255, 90, 31, 0.45);
+  transform: translateY(-4px);
+}
 @keyframes heroFade {
   0%,
   18% {

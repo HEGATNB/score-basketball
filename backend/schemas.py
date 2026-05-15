@@ -89,6 +89,8 @@ class PlayerBase(BaseModel):
 
 class PlayerResponse(PlayerBase):
     id: int
+    # Real NBA person_id from common_player_info — drives cdn.nba.com headshots.
+    nba_person_id: Optional[int] = None
 
     class Config:
         from_attributes = True

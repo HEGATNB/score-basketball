@@ -6,6 +6,7 @@ import { BrandLogo } from '@/shared/ui/BrandLogo';
 import { Footer } from '@/shared/ui/Footer';
 import { CookieAccept } from '@/shared/ui/CookieAccept';
 import { SearchPalette } from '@/shared/ui/SearchPalette';
+import { ErrorBoundary } from './ErrorBoundary';
 
 type NavItem = {
   to: string;
@@ -191,7 +192,9 @@ export const Layout = () => {
       </header>
 
       <main>
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       <Footer />

@@ -81,12 +81,14 @@ export interface Player {
 
 export interface Player {
   id: number;
+  /** Real NBA person_id from common_player_info — drives cdn.nba.com headshots */
+  nba_person_id?: number | null;
   first_name: string;
   last_name: string;
   number?: string;
   position?: string;
   height?: string;
-  weight?: number;  // ДОЛЖНО БЫТЬ number, НЕ string!
+  weight?: number;
   minutes_per_game?: number;
   points_per_game: number;
   rebounds_per_game: number;

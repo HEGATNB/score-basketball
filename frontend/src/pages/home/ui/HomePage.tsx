@@ -17,6 +17,8 @@ import { MatchCard } from '@/shared/ui/MatchCard';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
 import { LivePanel } from '@/shared/ui/LivePanel';
 import { liveApi, type LiveNewsItem } from '@/shared/api/live';
+import { NewsModal } from '@/shared/ui/NewsModal';
+import { HighlightsCarousel } from '@/shared/ui/HighlightsCarousel';
 
 const HERO_FRAMES = [
   'https://images.pexels.com/photos/2834917/pexels-photo-2834917.jpeg?auto=compress&cs=tinysrgb&w=1600',
@@ -68,6 +70,7 @@ export const HomePage = () => {
   const [news, setNews] = useState<LiveNewsItem[]>([]);
   const [myStats, setMyStats] = useState<any>(null);
   const [myChallenges, setMyChallenges] = useState<any[]>([]);
+  const [activeNews, setActiveNews] = useState<LiveNewsItem | null>(null);
 
   const playersRailRef = useRef<HTMLDivElement>(null);
 
@@ -155,19 +158,20 @@ export const HomePage = () => {
           <div className="grid items-end gap-12 lg:grid-cols-[1.4fr_1fr]">
             <div>
               <div
-                className="mb-7 inline-flex items-center gap-3 font-mono text-xs uppercase text-[var(--accent)]"
-                style={{ letterSpacing: '0.2em' }}
+                className="reveal-up mb-7 inline-flex items-center gap-3 font-mono text-xs uppercase text-[var(--accent)]"
+                style={{ letterSpacing: '0.2em', animationDelay: '0ms' }}
               >
                 <span className="h-px w-14" style={{ background: 'var(--accent)' }} />
                 <span>SEASON 2025/26 · TIPOFF</span>
               </div>
 
               <h1
-                className="m-0 mb-6 font-display font-black uppercase"
+                className="reveal-up m-0 mb-6 font-display font-black uppercase"
                 style={{
                   fontSize: 'clamp(64px, 10vw, 160px)',
                   lineHeight: 0.86,
                   letterSpacing: '-0.005em',
+                  animationDelay: '120ms',
                 }}
               >
                 <span className="stroked-text">SCORE.</span>
@@ -179,13 +183,19 @@ export const HomePage = () => {
                 <span>ЗАБИРАЙ</span>
               </h1>
 
-              <p className="mb-8 max-w-[540px] text-[18px] leading-relaxed text-[var(--text-2)]">
+              <p
+                className="reveal-up mb-8 max-w-[540px] text-[18px] leading-relaxed text-[var(--text-2)]"
+                style={{ animationDelay: '240ms' }}
+              >
                 ИИ разбирает форму, травмы, домашнюю площадку и темп. Ты бросаешь прогноз —
                 забираешь очки и поднимаешься в рейтинге. Никакого казино, только баскетбол и
                 холодная аналитика.
               </p>
 
-              <div className="flex flex-wrap items-center gap-3.5">
+              <div
+                className="reveal-up flex flex-wrap items-center gap-3.5"
+                style={{ animationDelay: '320ms' }}
+              >
                 <button
                   onClick={() => navigate(user ? '/prediction/new' : '/auth')}
                   className="btn btn-primary"
@@ -249,6 +259,9 @@ export const HomePage = () => {
 
       {/* ============== MARQUEE ============== */}
       <Marquee />
+
+      {/* ============== HIGHLIGHTS / MOMENTS ============== */}
+      <HighlightsCarousel />
 
       {/* ============== STAR PLAYERS RAIL ============== */}
       {players.length > 0 && (
@@ -699,12 +712,11 @@ export const HomePage = () => {
                 const cat = n.category || 'NBA';
                 const rt = relativeTime(n.published);
                 return (
-                  <a
+                  <button
+                    type="button"
                     key={n.id || idx}
-                    href={n.url || '#'}
-                    target={n.url ? '_blank' : undefined}
-                    rel="noopener noreferrer"
-                    className={`card cursor-pointer overflow-hidden ${featured ? 'lg:row-span-2' : ''}`}
+                    onClick={() => setActiveNews(n)}
+                    className={`card cursor-pointer overflow-hidden text-left transition-transform duration-300 hover:-translate-y-1 ${featured ? 'lg:row-span-2' : ''}`}
                     style={{ borderRadius: 'var(--r-md)' }}
                   >
                     <div
@@ -752,13 +764,16 @@ export const HomePage = () => {
                         </p>
                       )}
                     </div>
-                  </a>
+                  </button>
                 );
               })}
             </div>
           </div>
         </section>
       )}
+
+      {/* News article modal */}
+      <NewsModal article={activeNews} onClose={() => setActiveNews(null)} />
 
       {/* ============== CTA: Sign-in invite ============== */}
       {!user && (

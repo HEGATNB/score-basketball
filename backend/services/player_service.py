@@ -91,7 +91,13 @@ class PlayerService:
                 WHERE p.gp >= :min_games
             """
 
-            position_select = "c.position" if check_common else "NULL as position"
+            # When common_player_info is available, also pull the real NBA
+            # person_id so the frontend can build a working cdn.nba.com headshot URL.
+            position_select = (
+                "c.position, c.person_id as nba_person_id"
+                if check_common
+                else "NULL as position, NULL as nba_person_id"
+            )
             position_join = "LEFT JOIN common_player_info c ON p.player_name = c.display_first_last" if check_common else ""
 
             query = base_query.format(
@@ -185,6 +191,7 @@ class PlayerService:
 
                 players.append({
                     "id": latest.get("id"),
+                    "nba_person_id": latest.get("nba_person_id"),
                     "first_name": first_name,
                     "last_name": last_name,
                     "full_name": full_name,

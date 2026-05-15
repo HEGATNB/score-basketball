@@ -215,7 +215,7 @@ function PlayerRowCard({ player }: { player: Player }) {
             PTS
           </div>
           <div className="mt-1 font-display text-xl" style={{ color: 'var(--accent)' }}>
-            {player.points_per_game.toFixed(1)}
+            {Number(player.points_per_game ?? 0).toFixed(1)}
           </div>
         </div>
         <div className="text-center">
@@ -225,7 +225,7 @@ function PlayerRowCard({ player }: { player: Player }) {
           >
             REB
           </div>
-          <div className="mt-1 font-display text-xl">{player.rebounds_per_game.toFixed(1)}</div>
+          <div className="mt-1 font-display text-xl">{Number(player.rebounds_per_game ?? 0).toFixed(1)}</div>
         </div>
         <div className="text-center">
           <div
@@ -234,7 +234,7 @@ function PlayerRowCard({ player }: { player: Player }) {
           >
             AST
           </div>
-          <div className="mt-1 font-display text-xl">{player.assists_per_game.toFixed(1)}</div>
+          <div className="mt-1 font-display text-xl">{Number(player.assists_per_game ?? 0).toFixed(1)}</div>
         </div>
       </div>
     </div>

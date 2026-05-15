@@ -99,21 +99,25 @@ export function PlayerCard({ player, onOpenDetails, highlight }: PlayerCardProps
 
       <div className="player-stats">
         <div className="player-stat">
-          <div className="v">{player.points_per_game.toFixed(1)}</div>
+          <div className="v">{Number(player.points_per_game ?? 0).toFixed(1)}</div>
           <div className="l">PPG</div>
         </div>
         <div className="player-stat">
-          <div className="v">{player.assists_per_game.toFixed(1)}</div>
+          <div className="v">{Number(player.assists_per_game ?? 0).toFixed(1)}</div>
           <div className="l">APG</div>
         </div>
         <div className="player-stat">
-          <div className="v">{player.rebounds_per_game.toFixed(1)}</div>
+          <div className="v">{Number(player.rebounds_per_game ?? 0).toFixed(1)}</div>
           <div className="l">RPG</div>
         </div>
         <div className="player-stat">
           <div className="v">
-            {((player.points_per_game + player.rebounds_per_game + player.assists_per_game) /
-              3 || 0).toFixed(0)}
+            {(
+              ((Number(player.points_per_game ?? 0) +
+                Number(player.rebounds_per_game ?? 0) +
+                Number(player.assists_per_game ?? 0)) /
+                3) || 0
+            ).toFixed(0)}
           </div>
           <div className="l">EFF</div>
         </div>
