@@ -6,10 +6,11 @@ interface MatchLiveStatsProps {
   match: Match;
 }
 
-function toEspnDate(iso: string): string | null {
+function toEspnDate(iso: string, offsetDays = 0): string | null {
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return null;
+    d.setUTCDate(d.getUTCDate() + offsetDays);
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
@@ -36,28 +37,41 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      const date = toEspnDate(match.date);
-      if (!date || !match.homeTeam?.abbrev || !match.awayTeam?.abbrev) {
+      const homeAbbrev = match.homeTeam?.abbrev?.toUpperCase();
+      const awayAbbrev = match.awayTeam?.abbrev?.toUpperCase();
+      if (!homeAbbrev || !awayAbbrev || !match.date) {
         setStatus('not-found');
         return;
       }
+
+      // Try the exact day, then ±1 day to absorb timezone differences between
+      // our DB (UTC ISO) and the ESPN scoreboard's "game day".
+      const offsets = [0, -1, 1];
       try {
-        const sb = await liveApi.scoreboard(date);
-        if (cancelled) return;
-        const wanted = sb.events.find(
-          (e) =>
-            e.home.abbrev?.toUpperCase() === match.homeTeam.abbrev?.toUpperCase() &&
-            e.away.abbrev?.toUpperCase() === match.awayTeam.abbrev?.toUpperCase(),
-        );
-        if (!wanted) {
-          setStatus('not-found');
-          return;
+        for (const offset of offsets) {
+          if (cancelled) return;
+          const date = toEspnDate(match.date, offset);
+          if (!date) continue;
+          const sb = await liveApi.scoreboard(date);
+          if (cancelled) return;
+          const wanted = sb.events.find(
+            (e) =>
+              (e.home.abbrev?.toUpperCase() === homeAbbrev &&
+                e.away.abbrev?.toUpperCase() === awayAbbrev) ||
+              // Some DB rows have home/away inverted vs ESPN; accept the flip.
+              (e.home.abbrev?.toUpperCase() === awayAbbrev &&
+                e.away.abbrev?.toUpperCase() === homeAbbrev),
+          );
+          if (wanted) {
+            setEvent(wanted);
+            const det = await liveApi.matchDetails(wanted.id);
+            if (cancelled) return;
+            setDetails(det);
+            setStatus('found');
+            return;
+          }
         }
-        setEvent(wanted);
-        const det = await liveApi.matchDetails(wanted.id);
-        if (cancelled) return;
-        setDetails(det);
-        setStatus('found');
+        setStatus('not-found');
       } catch {
         if (!cancelled) setStatus('error');
       }

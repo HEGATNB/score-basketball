@@ -398,54 +398,39 @@ export const HomePage = () => {
 
             <div className="flex flex-col gap-6">
               <div className="card p-6">
-                <h3 className="m-0 mb-4.5 flex items-center justify-between font-display text-2xl uppercase">
-                  <span>🏆 Рейтинг</span>
-                  <span className="tag tag-gold">НЕДЕЛЯ</span>
+                <h3 className="m-0 mb-4 flex items-center justify-between font-display text-2xl uppercase">
+                  <span>🏆 Лидеры лиги</span>
+                  <span className="tag tag-gold">WIN %</span>
                 </h3>
-                {[
-                  { rk: 1, name: 'KingOfTheNet', acc: 81, pts: 12480, gold: true },
-                  { rk: 2, name: 'StreetballSage', acc: 76, pts: 11220 },
-                  { rk: 3, name: 'MetricsKing', acc: 74, pts: 10840 },
-                  { rk: 47, name: user?.username || 'Ты', acc: 62, pts: 6420, you: true },
-                  { rk: 48, name: 'CourtVision', acc: 61, pts: 6280 },
-                ].map((r) => (
-                  <div
-                    key={r.rk + r.name}
-                    className={`leader-row ${r.gold ? 'gold' : ''}`}
-                    style={
-                      r.you
-                        ? {
-                            background: 'var(--accent-soft)',
-                            margin: '0 -10px',
-                            padding: '12px 10px',
-                            borderRadius: 10,
-                            borderTop: '1px solid var(--accent)',
-                          }
-                        : undefined
-                    }
-                  >
-                    <div className="rk">{r.rk}</div>
-                    <div className="av">{r.name[0].toUpperCase()}</div>
-                    <div className="nm">
-                      {r.name}
-                      {r.you && (
-                        <span
-                          className="ml-2 font-mono text-[10px]"
-                          style={{ color: 'var(--accent)', letterSpacing: '0.1em' }}
-                        >
-                          YOU
-                        </span>
-                      )}
-                    </div>
-                    <div className="acc">{r.acc}% точн.</div>
-                    <div className="pts">{r.pts.toLocaleString('ru')}</div>
-                  </div>
-                ))}
+                {topTeams.slice(0, 5).map((t, i) => {
+                  const total = t.wins + t.losses;
+                  const pct = total > 0 ? (t.wins / total) * 100 : 0;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => navigate(`/teams/${t.id}`)}
+                      className={`leader-row w-full text-left ${i === 0 ? 'gold' : ''}`}
+                    >
+                      <div className="rk">{i + 1}</div>
+                      <div
+                        className="av"
+                        style={{
+                          background: `linear-gradient(135deg, ${t.brandColor || '#ff5a1f'}, ${t.accentColor || '#ffb800'})`,
+                        }}
+                      >
+                        {(t.abbrev || t.name).slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="nm">{t.name}</div>
+                      <div className="acc">{t.wins}–{t.losses}</div>
+                      <div className="pts">{pct.toFixed(1)}%</div>
+                    </button>
+                  );
+                })}
                 <button
-                  onClick={() => navigate('/history')}
+                  onClick={() => navigate('/teams')}
                   className="btn mt-4 w-full justify-center"
                 >
-                  Весь рейтинг <span className="arrow">→</span>
+                  Все команды <span className="arrow">→</span>
                 </button>
               </div>
             </div>
@@ -453,18 +438,19 @@ export const HomePage = () => {
         </div>
       </section>
 
-      {/* ============== CABINET (mini) ============== */}
+      {/* ============== CABINET (preview — only for signed-in users) ============== */}
+      {user && (
       <section className="section-tight">
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЛИЧНЫЙ КАБИНЕТ</span>
+              <span className="eyebrow"><span className="dot" />ЛИЧНЫЙ КАБИНЕТ · DEMO</span>
               <h2>
                 ТВОЯ <em>СТАТА</em><br />ЗА СЕЗОН
               </h2>
             </div>
             <p className="lead">
-              Каждый прогноз идёт в копилку. Стрики, точность, любимые команды — видишь, где ты сильнее ИИ.
+              Превью кабинета. Реальные цифры — в твоей <a href="/history" className="underline" style={{ color: 'var(--accent)' }}>истории прогнозов</a>.
             </p>
           </div>
 
@@ -558,6 +544,7 @@ export const HomePage = () => {
           </div>
         </div>
       </section>
+      )}
 
       {/* ============== CHALLENGES (demo — only for signed-in users) ============== */}
       {user && (
