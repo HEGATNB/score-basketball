@@ -51,11 +51,47 @@ async def get_match_details(event_id: str):
 
 
 @router.get("/news")
-async def get_top_news(limit: int = Query(6, ge=1, le=20)):
+async def get_top_news(limit: int = Query(16, ge=1, le=40)):
     """ESPN NBA news headlines."""
     try:
         return live_service.get_top_news(limit=limit)
     except Exception as e:
         logger.error(f"News endpoint failed: {e}")
         # News is non-critical — return empty list rather than 5xx
+        return []
+
+
+@router.get("/news/{article_id}")
+async def get_article(article_id: str):
+    """Full body for a single ESPN article — paragraphs, images, related."""
+    try:
+        data = live_service.get_article(article_id)
+        if data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Article {article_id} not found",
+            )
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Article endpoint failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Article temporarily unavailable",
+        )
+
+
+@router.get("/highlights")
+async def get_highlights(limit: int = Query(12, ge=1, le=24)):
+    """Real playable highlight videos pulled from recently finished games.
+
+    Aggregates the `videos` array from ESPN's per-match summary endpoint
+    across the last few days and tags each clip with its parent matchup.
+    Cached aggressively (5 min) on the backend so the frontend can poll cheaply.
+    """
+    try:
+        return live_service.get_recent_highlights(limit=limit)
+    except Exception as e:
+        logger.error(f"Highlights endpoint failed: {e}")
         return []

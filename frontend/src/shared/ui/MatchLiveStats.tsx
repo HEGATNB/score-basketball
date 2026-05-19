@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Match } from '@/shared/api/client';
 import { liveApi, type LiveEvent, type LiveMatchDetails } from '@/shared/api/live';
+import { TeamLogo } from './TeamLogo';
 
 interface MatchLiveStatsProps {
   match: Match;
@@ -138,14 +139,16 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
                   <tr key={t.abbrev} className="border-b border-[var(--line)] last:border-b-0">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <span
-                          className="team-sq team-sq-sm"
-                          style={{
-                            background: `linear-gradient(135deg, ${t.color || '#ff5a1f'}, ${t.altColor || '#ffb800'})`,
+                        <TeamLogo
+                          team={{
+                            abbrev: t.abbrev,
+                            name: t.name,
+                            logoUrl: t.logo,
+                            brandColor: t.color,
+                            accentColor: t.altColor,
                           }}
-                        >
-                          {t.abbrev}
-                        </span>
+                          size={32}
+                        />
                         <div>
                           <div className="text-sm font-semibold">{t.shortName || t.abbrev}</div>
                           {t.record && (
@@ -228,14 +231,16 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
                 key={`${l.team.abbrev}-${l.name}-${i}`}
                 className="flex items-center gap-3 bg-[var(--surface)] px-5 py-4"
               >
-                <span
-                  className="team-sq team-sq-sm"
-                  style={{
-                    background: `linear-gradient(135deg, ${l.team.color || '#ff5a1f'}, ${l.team.altColor || '#ffb800'})`,
+                <TeamLogo
+                  team={{
+                    abbrev: l.team.abbrev,
+                    name: l.team.name,
+                    logoUrl: l.team.logo,
+                    brandColor: l.team.color,
+                    accentColor: l.team.altColor,
                   }}
-                >
-                  {l.team.abbrev}
-                </span>
+                  size={32}
+                />
                 <div className="min-w-0 flex-1">
                   <div
                     className="font-mono text-[10px] uppercase text-[var(--text-3)]"

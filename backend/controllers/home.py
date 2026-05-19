@@ -42,7 +42,7 @@ async def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
                 sort_by="pts",
                 sort_order="desc",
                 skip=0,
-                limit=6,
+                limit=16,
             )
         except Exception as e:
             logger.warning(f"Player leaderboard fetch failed: {e}")

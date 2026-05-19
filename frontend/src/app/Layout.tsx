@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { to: '/matches', label: 'Матчи' },
   { to: '/players', label: 'Игроки' },
   { to: '/teams', label: 'Лиги' },
+  { to: '/news', label: 'Лента' },
   { to: '/analytics', label: 'Аналитика' },
   { to: '/history', label: 'Кабинет', authOnly: true },
 ];

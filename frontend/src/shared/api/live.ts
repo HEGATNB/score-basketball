@@ -41,6 +41,29 @@ export interface LiveScoreboard {
   error?: string;
 }
 
+export interface LiveVideo {
+  id: string;
+  title: string;
+  caption: string | null;
+  thumbnail: string | null;
+  duration: number | null;
+  url: string;
+  webUrl: string | null;
+  published: string | null;
+}
+
+export interface LiveHighlight extends LiveVideo {
+  /** YouTube video id resolved by backend — play in-app via iframe */
+  youtubeId?: string | null;
+  youtubeQuery?: string;
+  matchup: {
+    eventId: string;
+    date: string | null;
+    home: { abbrev?: string; name?: string; logo?: string; score?: number | null };
+    away: { abbrev?: string; name?: string; logo?: string; score?: number | null };
+  };
+}
+
 export interface LiveMatchDetails {
   id: string;
   date: string | null;
@@ -57,6 +80,7 @@ export interface LiveMatchDetails {
     value: string;
     athlete: string | null;
   }>;
+  videos?: LiveVideo[];
 }
 
 export interface LiveNewsItem {
@@ -67,6 +91,30 @@ export interface LiveNewsItem {
   published: string | null;
   thumb: string | null;
   url: string | null;
+  byline?: string | null;
+  type?: string | null;
+}
+
+export interface LiveArticle {
+  id: string;
+  title: string;
+  description: string | null;
+  byline: string | null;
+  category: string | null;
+  published: string | null;
+  lastModified: string | null;
+  section: string | null;
+  keywords: string[];
+  paragraphs: string[];
+  images: Array<{
+    url: string;
+    caption?: string | null;
+    credit?: string | null;
+    width?: number | null;
+    height?: number | null;
+  }>;
+  related: Array<{ id: string; title: string; url: string | null; thumb: string | null }>;
+  url: string | null;
 }
 
 export const liveApi = {
@@ -74,5 +122,8 @@ export const liveApi = {
     apiRequest<LiveScoreboard>(`/live/scoreboard${date ? `?date=${date}` : ''}`, undefined, false),
   matchDetails: (espnId: string) =>
     apiRequest<LiveMatchDetails>(`/live/match/${espnId}`, undefined, false),
-  news: (limit = 6) => apiRequest<LiveNewsItem[]>(`/live/news?limit=${limit}`, undefined, false),
+  news: (limit = 16) => apiRequest<LiveNewsItem[]>(`/live/news?limit=${limit}`, undefined, false),
+  article: (id: string) => apiRequest<LiveArticle>(`/live/news/${id}`, undefined, false),
+  highlights: (limit = 12) =>
+    apiRequest<LiveHighlight[]>(`/live/highlights?limit=${limit}`, undefined, false),
 };

@@ -17,6 +17,7 @@ const AuthPage = lazy(() => import('./pages/auth/ui/AuthPage'));
 const AnalyticsPage = lazy(() => import('./pages/analytics/ui/AnalyticsPage'));
 const AdminPage = lazy(() => import('./pages/admin/ui/AdminPage'));
 const PlayersPage = lazy(() => import('./pages/players/ui/PlayersPage'));
+const NewsPage = lazy(() => import('./pages/news/ui/NewsPage'));
 const NotFoundPage = lazy(() => import('./pages/not-found/ui/NotFoundPage'));
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
               <Route path="/players" element={<PlayersPage />} />
               <Route path="/matches" element={<MatchesPage />} />
               <Route path="/matches/:matchId" element={<MatchPage />} />
+              <Route path="/news" element={<NewsPage />} />
               <Route
                 path="/prediction/new"
                 element={

@@ -379,11 +379,29 @@ function normalizeByEndpoint(endpoint: string, payload: any): any {
     return Array.isArray(payload) ? payload.map(normalizeMatch) : normalizeMatch(payload);
   }
 
-  if (endpoint.startsWith('/players')) {
+  // Only the player list endpoints — /players/seasons returns string[]
+  // and must NOT be put through normalizePlayer (otherwise strings turn
+  // into Player-shaped objects and crash the page with React error #31).
+  if (
+    endpoint === '/players' ||
+    endpoint.startsWith('/players?') ||
+    endpoint.startsWith('/players/team/') ||
+    /^\/players\/\d+/.test(endpoint)
+  ) {
     return Array.isArray(payload) ? payload.map(normalizePlayer) : normalizePlayer(payload);
   }
 
-  if (endpoint.startsWith('/predictions') || endpoint.startsWith('/predict')) {
+  // Only the prediction CRUD endpoints — NOT /predictions/my/stats (returns
+  // an aggregate object with categories/streak/etc.) nor /predict/stats
+  // (returns model accuracy stats). If we run those through normalizePrediction
+  // we lose all the fields and the cabinet crashes on `categories.underdog`.
+  if (
+    endpoint === '/predictions' ||
+    endpoint.startsWith('/predictions?') ||
+    /^\/predictions\/[a-zA-Z0-9_-]+$/.test(endpoint) || // /predictions/{id}
+    endpoint === '/predict' ||
+    endpoint.startsWith('/predict?')
+  ) {
     return Array.isArray(payload) ? payload.map(normalizePrediction) : normalizePrediction(payload);
   }
 

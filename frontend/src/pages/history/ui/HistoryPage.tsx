@@ -121,48 +121,42 @@ export const HistoryPage = () => {
     user: 'User',
   };
 
-  // Weakness/strength rows from real category data
+  // Weakness/strength rows from real category data. The whole `categories`
+  // object can be missing on a fresh account, so guard each access.
   type CategoryRow = { l: string; v: string; color: string };
+  const cats = stats?.categories;
+  const u = cats?.underdog;
+  const f = cats?.favourite;
+  const h = cats?.highConfidence;
+  const l = cats?.lowConfidence;
   const weaknesses: CategoryRow[] = stats
     ? [
-        ...(stats.categories.underdog.pct !== null
+        ...(u && u.pct !== null && u.pct !== undefined
           ? [{
               l: 'Андердоги',
-              v: `${stats.categories.underdog.pct}% · ${stats.categories.underdog.correct}/${stats.categories.underdog.n}`,
-              color:
-                stats.categories.underdog.pct >= 50
-                  ? 'var(--ok)'
-                  : 'var(--danger)',
+              v: `${u.pct}% · ${u.correct}/${u.n}`,
+              color: u.pct >= 50 ? 'var(--ok)' : 'var(--danger)',
             }]
           : []),
-        ...(stats.categories.favourite.pct !== null
+        ...(f && f.pct !== null && f.pct !== undefined
           ? [{
               l: 'Фавориты',
-              v: `${stats.categories.favourite.pct}% · ${stats.categories.favourite.correct}/${stats.categories.favourite.n}`,
-              color:
-                stats.categories.favourite.pct >= 60
-                  ? 'var(--ok)'
-                  : 'var(--gold)',
+              v: `${f.pct}% · ${f.correct}/${f.n}`,
+              color: f.pct >= 60 ? 'var(--ok)' : 'var(--gold)',
             }]
           : []),
-        ...(stats.categories.highConfidence.pct !== null
+        ...(h && h.pct !== null && h.pct !== undefined
           ? [{
               l: 'Высокая уверенность ИИ (≥65%)',
-              v: `${stats.categories.highConfidence.pct}% · ${stats.categories.highConfidence.correct}/${stats.categories.highConfidence.n}`,
-              color:
-                stats.categories.highConfidence.pct >= 65
-                  ? 'var(--ok)'
-                  : 'var(--gold)',
+              v: `${h.pct}% · ${h.correct}/${h.n}`,
+              color: h.pct >= 65 ? 'var(--ok)' : 'var(--gold)',
             }]
           : []),
-        ...(stats.categories.lowConfidence.pct !== null
+        ...(l && l.pct !== null && l.pct !== undefined
           ? [{
               l: 'Низкая уверенность ИИ (≤55%)',
-              v: `${stats.categories.lowConfidence.pct}% · ${stats.categories.lowConfidence.correct}/${stats.categories.lowConfidence.n}`,
-              color:
-                stats.categories.lowConfidence.pct >= 50
-                  ? 'var(--gold)'
-                  : 'var(--danger)',
+              v: `${l.pct}% · ${l.correct}/${l.n}`,
+              color: l.pct >= 50 ? 'var(--gold)' : 'var(--danger)',
             }]
           : []),
       ]

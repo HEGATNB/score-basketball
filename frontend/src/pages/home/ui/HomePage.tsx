@@ -13,12 +13,15 @@ import { useAuth } from '@/app/providers/AuthProvider';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 import { Marquee } from '@/shared/ui/Marquee';
 import { TeamMark } from '@/shared/ui/TeamMark';
+import { TeamLogo } from '@/shared/ui/TeamLogo';
 import { MatchCard } from '@/shared/ui/MatchCard';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
+import { PlayerDetailModal } from '@/shared/ui/PlayerDetailModal';
 import { LivePanel } from '@/shared/ui/LivePanel';
 import { liveApi, type LiveNewsItem } from '@/shared/api/live';
 import { NewsModal } from '@/shared/ui/NewsModal';
 import { HighlightsCarousel } from '@/shared/ui/HighlightsCarousel';
+import { NewsBentoCard, NewsBentoFeature } from '@/shared/ui/NewsBentoCard';
 
 const HERO_FRAMES = [
   'https://images.pexels.com/photos/2834917/pexels-photo-2834917.jpeg?auto=compress&cs=tinysrgb&w=1600',
@@ -71,6 +74,7 @@ export const HomePage = () => {
   const [myStats, setMyStats] = useState<any>(null);
   const [myChallenges, setMyChallenges] = useState<any[]>([]);
   const [activeNews, setActiveNews] = useState<LiveNewsItem | null>(null);
+  const [activePlayer, setActivePlayer] = useState<Player | null>(null);
 
   const playersRailRef = useRef<HTMLDivElement>(null);
 
@@ -89,7 +93,7 @@ export const HomePage = () => {
             apiRequest<Team[]>('/teams'),
             apiRequest<Match[]>('/matches?limit=12'),
             apiRequest<any>('/predict/stats').catch(() => ({})),
-            apiRequest<Player[]>('/players?limit=8&sort_by=pts&sort_order=desc&min_games=5').catch(() => []),
+            apiRequest<Player[]>('/players?limit=16&sort_by=pts&sort_order=desc&min_games=5').catch(() => []),
           ]);
           setTeams([...t].sort((a, b) => b.wins - a.wins));
           setMatches(m);
@@ -104,7 +108,8 @@ export const HomePage = () => {
     };
     load();
 
-    // News (independent — non-blocking, falls back to empty)
+    // News (independent — non-blocking, falls back to empty).
+    // Homepage shows only a teaser; the full feed lives at /news.
     liveApi.news(6).then(setNews).catch(() => setNews([]));
   }, []);
 
@@ -260,6 +265,67 @@ export const HomePage = () => {
       {/* ============== MARQUEE ============== */}
       <Marquee />
 
+      {/* ============== EDITORIAL BAND — газетная полоса под маркизом ============== */}
+      <section style={{ borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', background: 'var(--bg-2)' }}>
+        <div className="container-x">
+          <div className="editorial-band">
+            <div className="eb-dateline">
+              <span className="eb-issue">ISSUE №{Math.max(1, (totalPredictions || 1) % 999)}</span>
+              <span className="eb-date">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', day: '2-digit', month: 'long' }).toUpperCase()}
+              </span>
+              <span className="eb-sep">·</span>
+              <span className="eb-loc">NBA · 2025/26</span>
+            </div>
+
+            <div className="eb-row">
+              <div className="eb-headline">
+                <span className="kicker">ON THE COURT TONIGHT</span>
+                <h3>
+                  {upcoming[0]
+                    ? `${(upcoming[0].awayTeam.abbrev || '').toUpperCase()} едут к ${(upcoming[0].homeTeam.abbrev || '').toUpperCase()}`
+                    : finished[0]
+                      ? `${(finished[0].awayTeam.abbrev || '').toUpperCase()} vs ${(finished[0].homeTeam.abbrev || '').toUpperCase()} — итог в архиве`
+                      : 'Тихий день в лиге'}
+                </h3>
+                <p>
+                  {upcoming[0]
+                    ? 'ИИ собрал прогноз — открывай матч и забирай очки до tip-off.'
+                    : 'Загляни в архив сыгранных матчей или сделай прогноз на ближайшую игру.'}
+                </p>
+                <div className="eb-cta">
+                  <button onClick={() => navigate('/matches')} className="btn btn-primary">
+                    Открыть расписание
+                  </button>
+                  <button onClick={() => navigate(user ? '/prediction/new' : '/auth')} className="btn">
+                    Бросить прогноз
+                  </button>
+                </div>
+              </div>
+
+              <div className="eb-ledger">
+                <div className="eb-ledger-row">
+                  <span className="lbl">Игр в архиве</span>
+                  <span className="val tab-num">{(stats?.totalTrainingGames || matches.length || 0).toLocaleString('ru')}</span>
+                </div>
+                <div className="eb-ledger-row">
+                  <span className="lbl">Точность модели</span>
+                  <span className="val tab-num" style={{ color: 'var(--accent)' }}>{accuracy || 78}%</span>
+                </div>
+                <div className="eb-ledger-row">
+                  <span className="lbl">Сделано прогнозов</span>
+                  <span className="val tab-num">{totalPredictions.toLocaleString('ru')}</span>
+                </div>
+                <div className="eb-ledger-row">
+                  <span className="lbl">Версия модели</span>
+                  <span className="val mono">{stats?.modelVersion || 'v1.0'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ============== HIGHLIGHTS / MOMENTS ============== */}
       <HighlightsCarousel />
 
@@ -306,7 +372,7 @@ export const HomePage = () => {
               style={{ scrollSnapType: 'x mandatory', scrollBehavior: 'smooth', paddingBottom: 30 }}
             >
               {players.map((p) => (
-                <PlayerCard key={p.id} player={p} onOpenDetails={() => navigate('/players')} />
+                <PlayerCard key={p.id} player={p} onOpenDetails={() => setActivePlayer(p)} />
               ))}
             </div>
           </div>
@@ -442,13 +508,8 @@ export const HomePage = () => {
                       className={`leader-row w-full text-left ${i === 0 ? 'gold' : ''}`}
                     >
                       <div className="rk">{i + 1}</div>
-                      <div
-                        className="av"
-                        style={{
-                          background: `linear-gradient(135deg, ${t.brandColor || '#ff5a1f'}, ${t.accentColor || '#ffb800'})`,
-                        }}
-                      >
-                        {(t.abbrev || t.name).slice(0, 2).toUpperCase()}
+                      <div className="av flex items-center justify-center" style={{ padding: 0, background: 'transparent' }}>
+                        <TeamLogo team={t} size={40} />
                       </div>
                       <div className="nm">{t.name}</div>
                       <div className="acc">{t.wins}–{t.losses}</div>
@@ -701,72 +762,45 @@ export const HomePage = () => {
                   ЧТО ЧИТАТЬ<br /><em>ПЕРЕД</em> ПРОГНОЗОМ
                 </h2>
               </div>
-              <p className="lead">
-                Свежие заголовки прямо из ESPN. Аналитика, травмы, разборы — обновляется автоматически.
-              </p>
+              <div className="flex flex-col items-end gap-4">
+                <p className="lead">
+                  Свежие заголовки прямо из ESPN. Аналитика, травмы, разборы — обновляется автоматически.
+                </p>
+                <div className="actions">
+                  <button onClick={() => navigate('/news')} className="btn">
+                    Вся лента <span className="arrow">→</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr_1fr]">
-              {news.slice(0, 5).map((n, idx) => {
-                const featured = idx === 0;
-                const cat = n.category || 'NBA';
-                const rt = relativeTime(n.published);
-                return (
-                  <button
-                    type="button"
-                    key={n.id || idx}
-                    onClick={() => setActiveNews(n)}
-                    className={`card cursor-pointer overflow-hidden text-left transition-transform duration-300 hover:-translate-y-1 ${featured ? 'lg:row-span-2' : ''}`}
-                    style={{ borderRadius: 'var(--r-md)' }}
-                  >
-                    <div
-                      className="relative"
-                      style={{
-                        height: featured ? 320 : 220,
-                        backgroundImage: n.thumb
-                          ? `url(${n.thumb})`
-                          : 'linear-gradient(135deg, rgba(255,90,31,0.18), rgba(20,20,28,0.8))',
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                      }}
-                    >
-                      <div
-                        aria-hidden
-                        className="absolute inset-0"
-                        style={{
-                          background:
-                            'linear-gradient(180deg, transparent 40%, rgba(8,8,11,0.92))',
-                        }}
-                      />
-                    </div>
-                    <div className={featured ? 'p-6' : 'p-5'}>
-                      <div
-                        className="mb-3 flex items-center gap-2.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-                        style={{ letterSpacing: '0.16em' }}
-                      >
-                        <span style={{ color: 'var(--accent)' }}>{cat}</span>
-                        {rt && (
-                          <>
-                            <span>·</span>
-                            <span>{rt}</span>
-                          </>
-                        )}
-                      </div>
-                      <h4
-                        className="m-0 mb-2.5 font-display uppercase"
-                        style={{ fontSize: featured ? '32px' : '20px', lineHeight: 1.1 }}
-                      >
-                        {n.title}
-                      </h4>
-                      {featured && n.description && (
-                        <p className="line-clamp-3 text-[13px] leading-[1.5] text-[var(--text-3)]">
-                          {n.description}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+            {/* Premium bento — 1 feature + 4 cards. Magazine vibes, no
+                cramped row layout with squished thumbs. */}
+            <div className="news-bento">
+              {news[0] && (
+                <NewsBentoFeature
+                  item={news[0]}
+                  relTime={relativeTime(news[0].published)}
+                  onOpen={() => setActiveNews(news[0])}
+                />
+              )}
+
+              {news.slice(1, 5).map((n, i) => (
+                <NewsBentoCard
+                  key={n.id || i}
+                  item={n}
+                  relTime={relativeTime(n.published)}
+                  tall={i < 2}
+                  onOpen={() => setActiveNews(n)}
+                />
+              ))}
+            </div>
+
+            {/* Footer CTA */}
+            <div className="mt-10 flex justify-center">
+              <button onClick={() => navigate('/news')} className="btn btn-primary">
+                Открыть всю ленту <span className="arrow">→</span>
+              </button>
             </div>
           </div>
         </section>
@@ -774,6 +808,9 @@ export const HomePage = () => {
 
       {/* News article modal */}
       <NewsModal article={activeNews} onClose={() => setActiveNews(null)} />
+
+      {/* Player detail modal */}
+      <PlayerDetailModal player={activePlayer} onClose={() => setActivePlayer(null)} />
 
       {/* ============== CTA: Sign-in invite ============== */}
       {!user && (

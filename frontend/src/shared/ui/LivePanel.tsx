@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { liveApi, type LiveEvent } from '@/shared/api/live';
+import { TeamLogo } from './TeamLogo';
 
 interface LivePanelProps {
   /** How often to refetch (ms). Default 30s for live games, longer otherwise. */
@@ -11,17 +12,18 @@ interface LivePanelProps {
 const REFRESH_MS_DEFAULT = 30_000;
 
 function TeamMini({ team, score, winning }: { team: LiveEvent['home']; score: number | null | undefined; winning: boolean }) {
-  const color = team.color || '#ff5a1f';
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <span
-        className="team-sq team-sq-sm"
-        style={{
-          background: `linear-gradient(135deg, ${color}, ${team.altColor || '#ffb800'})`,
+      <TeamLogo
+        team={{
+          abbrev: team.abbrev,
+          name: team.name,
+          logoUrl: team.logo,
+          brandColor: team.color,
+          accentColor: team.altColor,
         }}
-      >
-        {team.abbrev || '?'}
-      </span>
+        size={32}
+      />
       <div className="min-w-0 text-left">
         <div className="truncate text-[13px] font-semibold">{team.abbrev || team.shortName}</div>
         <div
@@ -155,14 +157,16 @@ export const LivePanel = ({ refreshMs = REFRESH_MS_DEFAULT, maxRows = 4, classNa
                 )}
               </div>
               <div className="flex flex-row-reverse items-center gap-2.5">
-                <span
-                  className="team-sq team-sq-sm"
-                  style={{
-                    background: `linear-gradient(135deg, ${e.away.color || '#5db8ff'}, ${e.away.altColor || '#ff5a1f'})`,
+                <TeamLogo
+                  team={{
+                    abbrev: e.away.abbrev,
+                    name: e.away.name,
+                    logoUrl: e.away.logo,
+                    brandColor: e.away.color,
+                    accentColor: e.away.altColor,
                   }}
-                >
-                  {e.away.abbrev || '?'}
-                </span>
+                  size={32}
+                />
                 <div className="min-w-0 text-right">
                   <div className="truncate text-[13px] font-semibold">
                     {e.away.abbrev || e.away.shortName}

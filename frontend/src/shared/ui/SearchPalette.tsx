@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X, Loader2, ArrowUpRight } from 'lucide-react';
 import { apiRequest, type Player, type Team } from '@/shared/api/client';
+import { TeamLogo } from './TeamLogo';
 
 interface SearchPaletteProps {
   open: boolean;
@@ -141,14 +142,7 @@ export const SearchPalette = ({ open, onClose }: SearchPaletteProps) => {
                       className="group flex w-full items-center justify-between gap-3 px-5 py-2.5 text-left transition hover:bg-[var(--surface-2)]"
                     >
                       <div className="flex items-center gap-3">
-                        <span
-                          className="team-sq team-sq-sm"
-                          style={{
-                            background: `linear-gradient(135deg, ${t.brandColor || '#ff5a1f'}, ${t.accentColor || '#ffb800'})`,
-                          }}
-                        >
-                          {t.abbrev || t.name.slice(0, 3).toUpperCase()}
-                        </span>
+                        <TeamLogo team={t} size={32} />
                         <div>
                           <div className="text-sm font-semibold">{t.name}</div>
                           <div

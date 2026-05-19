@@ -9,15 +9,21 @@ interface PlayerAvatarProps {
   className?: string;
 }
 
+function asText(v: unknown, fallback = ''): string {
+  if (v == null) return fallback;
+  if (typeof v === 'string' || typeof v === 'number') return String(v);
+  return fallback;
+}
+
 export const PlayerAvatar = ({ player, variant = 'card', className = '' }: PlayerAvatarProps) => {
   const candidates = useMemo(() => getPlayerImageCandidates(player), [player]);
   const initials = useMemo(() => getPlayerInitials(player), [player]);
   const teamBrand = getTeamBrand({
-    abbrev: player.team?.abbrev || player.team_abbrev,
-    name: player.team?.name,
+    abbrev: asText(player.team?.abbrev) || asText(player.team_abbrev),
+    name: asText(player.team?.name),
   });
-  const brandColor = player.team?.brandColor || teamBrand.brandColor;
-  const accentColor = player.team?.accentColor || teamBrand.accentColor;
+  const brandColor = asText(player.team?.brandColor) || teamBrand.brandColor;
+  const accentColor = asText(player.team?.accentColor) || teamBrand.accentColor;
 
   const [idx, setIdx] = useState(0);
   const [allFailed, setAllFailed] = useState(candidates.length === 0);
@@ -32,9 +38,16 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
     else setAllFailed(true);
   };
 
+  const altText =
+    asText((player as any).full_name) ||
+    `${asText(player.first_name)} ${asText(player.last_name)}`.trim() ||
+    'Player';
+
   const tint: React.CSSProperties = {
     background: `linear-gradient(135deg, ${brandColor}, ${accentColor})`,
   };
+
+  const safeSrc = candidates[idx];
 
   if (variant === 'row') {
     return (
@@ -42,10 +55,10 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
         className={`relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[var(--line)] ${className}`}
         style={tint}
       >
-        {!allFailed ? (
+        {!allFailed && typeof safeSrc === 'string' && safeSrc ? (
           <img
-            src={candidates[idx]}
-            alt={player.full_name || `${player.first_name} ${player.last_name}`}
+            src={safeSrc}
+            alt={altText}
             className="h-full w-full object-cover object-top"
             style={{ mixBlendMode: 'luminosity' }}
             loading="lazy"
@@ -66,10 +79,10 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
 
   return (
     <div className={`relative aspect-[4/3] w-full overflow-hidden ${className}`} style={tint}>
-      {!allFailed ? (
+      {!allFailed && typeof safeSrc === 'string' && safeSrc ? (
         <img
-          src={candidates[idx]}
-          alt={player.full_name || `${player.first_name} ${player.last_name}`}
+          src={safeSrc}
+          alt={altText}
           className="absolute inset-0 h-full w-full object-cover object-top"
           style={{ mixBlendMode: 'luminosity', filter: 'contrast(1.1)' }}
           loading="lazy"

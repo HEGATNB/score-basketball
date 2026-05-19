@@ -4,6 +4,7 @@ import { apiRequest, type Player } from '@/shared/api/client';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
 import { PlayerAvatar } from '@/shared/ui/PlayerAvatar';
+import { PlayerDetailModal } from '@/shared/ui/PlayerDetailModal';
 
 type SortKey = 'pts' | 'reb' | 'ast' | 'gp' | 'player_name';
 
@@ -23,6 +24,8 @@ export const PlayersPage = () => {
   const [sortBy, setSortBy] = useState<SortKey>('pts');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<Player | null>(null);
+  const [visible, setVisible] = useState(60);
 
   useEffect(() => {
     apiRequest<string[]>('/players/seasons')
@@ -35,8 +38,9 @@ export const PlayersPage = () => {
 
   useEffect(() => {
     setLoading(true);
+    setVisible(60);
     const params = new URLSearchParams();
-    params.set('limit', '120');
+    params.set('limit', '500');
     params.set('sort_by', sortBy);
     params.set('sort_order', 'desc');
     params.set('min_games', '5');
@@ -154,7 +158,7 @@ export const PlayersPage = () => {
                 </div>
                 <div className="flex gap-5 overflow-x-auto pb-2 no-scrollbar">
                   {featured.map((p) => (
-                    <PlayerCard key={p.id} player={p} highlight />
+                    <PlayerCard key={p.id} player={p} highlight onOpenDetails={() => setSelected(p)} />
                   ))}
                 </div>
               </div>
@@ -170,22 +174,68 @@ export const PlayersPage = () => {
               {season && <span className="tag">Сезон · {season}</span>}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {(search ? players : rest).map((player) => (
-                <PlayerRowCard key={player.id} player={player} />
-              ))}
-            </div>
+            {(() => {
+              const sourceList = search ? players : rest;
+              const shown = sourceList.slice(0, visible);
+              const hasMore = sourceList.length > shown.length;
+              return (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {shown.map((player) => (
+                      <PlayerRowCard
+                        key={player.id}
+                        player={player}
+                        onOpen={() => setSelected(player)}
+                      />
+                    ))}
+                  </div>
+                  {hasMore && (
+                    <div className="mt-10 flex justify-center">
+                      <button
+                        onClick={() => setVisible((v) => v + 60)}
+                        className="btn btn-primary"
+                      >
+                        Показать ещё {Math.min(60, sourceList.length - shown.length)} игроков
+                        <span className="arrow">↓</span>
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
+      <PlayerDetailModal player={selected} onClose={() => setSelected(null)} />
     </section>
   );
 };
 
-function PlayerRowCard({ player }: { player: Player }) {
-  const fullName = player.full_name || `${player.first_name} ${player.last_name}`.trim();
+function asText(v: unknown, fallback = ''): string {
+  if (v == null) return fallback;
+  if (typeof v === 'string' || typeof v === 'number') return String(v);
+  return fallback;
+}
+
+function asNumber(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function PlayerRowCard({ player, onOpen }: { player: Player; onOpen?: () => void }) {
+  const first = asText(player.first_name);
+  const last = asText(player.last_name);
+  const fullName = asText((player as any).full_name) || `${first} ${last}`.trim() || 'Player';
+  const position = asText(player.position) || 'PRO';
+  const number = asText(player.number);
+  const team = asText(player.team_abbrev) || asText(player.team?.abbrev) || 'NBA';
+
   return (
-    <div className="card group p-5">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="card group w-full p-5 text-left transition hover:-translate-y-1 hover:border-[var(--accent)]"
+    >
       <div className="flex items-center gap-4">
         <PlayerAvatar player={player} variant="row" />
         <div className="min-w-0 flex-1">
@@ -193,15 +243,15 @@ function PlayerRowCard({ player }: { player: Player }) {
             className="font-mono text-[10px] uppercase text-[var(--text-3)]"
             style={{ letterSpacing: '0.18em' }}
           >
-            {player.position || 'PRO'}
-            {player.number ? ` · #${player.number}` : ''}
+            {position}
+            {number ? ` · #${number}` : ''}
           </div>
           <div className="mt-1 truncate font-display text-xl uppercase">{fullName}</div>
           <div
             className="mt-0.5 font-mono text-[10px] uppercase"
             style={{ color: 'var(--accent)', letterSpacing: '0.18em' }}
           >
-            {player.team_abbrev || player.team?.abbrev || 'NBA'}
+            {team}
           </div>
         </div>
       </div>
@@ -215,7 +265,7 @@ function PlayerRowCard({ player }: { player: Player }) {
             PTS
           </div>
           <div className="mt-1 font-display text-xl" style={{ color: 'var(--accent)' }}>
-            {Number(player.points_per_game ?? 0).toFixed(1)}
+            {asNumber(player.points_per_game).toFixed(1)}
           </div>
         </div>
         <div className="text-center">
@@ -225,7 +275,9 @@ function PlayerRowCard({ player }: { player: Player }) {
           >
             REB
           </div>
-          <div className="mt-1 font-display text-xl">{Number(player.rebounds_per_game ?? 0).toFixed(1)}</div>
+          <div className="mt-1 font-display text-xl">
+            {asNumber(player.rebounds_per_game).toFixed(1)}
+          </div>
         </div>
         <div className="text-center">
           <div
@@ -234,10 +286,12 @@ function PlayerRowCard({ player }: { player: Player }) {
           >
             AST
           </div>
-          <div className="mt-1 font-display text-xl">{Number(player.assists_per_game ?? 0).toFixed(1)}</div>
+          <div className="mt-1 font-display text-xl">
+            {asNumber(player.assists_per_game).toFixed(1)}
+          </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
