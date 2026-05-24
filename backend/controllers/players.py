@@ -120,7 +120,7 @@ async def get_player_by_id(
             detail=f"Error getting player: {str(e)}"
         )
 
-# Полная карьерная разбивка по сезонам — для PlayerDetailModal
+# Карьерная разбивка по сезонам — для PlayerDetailModal на фронте
 @router.get("/{player_id}/seasons")
 async def get_player_seasons(
     player_id: int,

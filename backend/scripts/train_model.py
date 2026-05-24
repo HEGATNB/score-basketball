@@ -534,6 +534,7 @@ def train_model():
         )
 
         # Оценка на валидационной(частичной) выборке
+
         val_loss, val_acc, val_auc = model.evaluate(X_val_scaled, y_val, sample_weight=w_val, verbose=0)
         print(f"Точность валидации: {val_acc:.4f}")
         print(f"AUC валидации: {val_auc:.4f}")
@@ -560,25 +561,17 @@ def train_model():
             pickle.dump(team_emas, f)
 
         # Сохраняем информацию о командах
-        # Use a plain (non-RealDictCursor) connection so pandas can map columns correctly.
-        teams_conn = psycopg2.connect(
-            dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
-            host=DB_HOST, port=DB_PORT,
-        )
-        teams_cursor = teams_conn.cursor()
-        teams_cursor.execute("""
-            SELECT DISTINCT
-                team_id_home AS team_id,
-                team_name_home AS team_name,
-                team_abbreviation_home AS team_abbrev
-            FROM game
+
+        conn = get_db_connection()
+        teams_df = pd.read_sql_query("""
+            SELECT DISTINCT 
+                team_id_home as team_id, 
+                team_name_home as team_name, 
+                team_abbreviation_home as team_abbrev 
+            FROM game 
             WHERE team_id_home IS NOT NULL
-        """)
-        teams_rows = teams_cursor.fetchall()
-        teams_cols = [d[0] for d in teams_cursor.description]
-        teams_cursor.close()
-        teams_conn.close()
-        teams_df = pd.DataFrame(teams_rows, columns=teams_cols)
+        """, conn)
+        conn.close()
 
         teams_path = os.path.join(MODEL_DIR, "teams.csv")
         teams_df.to_csv(teams_path, index=False)

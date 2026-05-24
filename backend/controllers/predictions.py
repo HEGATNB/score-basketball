@@ -234,6 +234,7 @@ async def train_on_match(
         "result": result
     }
 
+
 # ============================================================
 # User stats / cabinet / challenges / leaderboard
 # ============================================================
@@ -291,8 +292,6 @@ async def get_leaderboard(
     try:
         svc = UserStatsService(db)
         board = svc.get_leaderboard(limit=limit)
-
-        # Optional: mark the current user's row if signed-in
         try:
             user_data = await get_current_user(request)
             if user_data:
@@ -301,7 +300,6 @@ async def get_leaderboard(
                         row["isYou"] = True
         except Exception:
             pass
-
         return board
     except Exception as e:
         import traceback

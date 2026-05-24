@@ -1,65 +1,29 @@
-# services/match_service.py
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
+from repositories.game_repository import GameRepository
+
 
 class MatchService:
     def __init__(self, db: Session):
         self.db = db
-
-    # services/match_service.py - исправленная генерация ID
-
-    # services/match_service.py - только исправленный метод get_all_matches
+        self.game_repo = GameRepository(db)
 
     def get_all_matches(self, filters: Dict = None, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """Получение всех матчей"""
         try:
-            query = """
-                SELECT 
-                    g.season_id,
-                    g.game_id,
-                    g.game_date,
-                    g.team_id_home,
-                    g.team_id_away,
-                    g.pts_home,
-                    g.pts_away,
-                    g.wl_home,
-                    g.wl_away,
-                    g.season_type,
-                    g.team_abbreviation_home as home_team_abbrev,
-                    g.team_name_home as home_team_name,
-                    g.team_abbreviation_away as away_team_abbrev,
-                    g.team_name_away as away_team_name
-                FROM game g
-                WHERE 1=1
-            """
-
-            where_clauses = []
-            params = {}
-
+            status_filter = None
             if filters and filters.get("status"):
-                if filters["status"] == "finished":
-                    where_clauses.append("g.pts_home IS NOT NULL AND g.pts_away IS NOT NULL")
-                elif filters["status"] == "scheduled":
-                    where_clauses.append("g.pts_home IS NULL OR g.pts_away IS NULL")
+                status_filter = filters["status"]
 
-            if where_clauses:
-                query += " AND " + " AND ".join(where_clauses)
-
-            query += " ORDER BY g.game_date DESC NULLS LAST LIMIT :limit OFFSET :skip"
-            params["limit"] = limit
-            params["skip"] = skip
-
-            result = self.db.execute(text(query), params).fetchall()
+            games = self.game_repo.get_all(status_filter=status_filter, skip=skip, limit=limit)
 
             matches = []
             used_ids = set()
 
-            for row in result:
-                game = dict(row._mapping)
-
+            for game in games:
                 # Определяем статус по наличию счета
                 has_score = (game.get("pts_home") is not None and
                              game.get("pts_away") is not None and
@@ -147,28 +111,7 @@ class MatchService:
     def get_match_by_id(self, match_id: int) -> Optional[Dict[str, Any]]:
         """Получение матча по ID"""
         try:
-            # Получаем конкретный матч по ID
-            query = """
-                SELECT 
-                    g.season_id,
-                    g.game_id,
-                    g.game_date,
-                    g.team_id_home,
-                    g.team_id_away,
-                    g.pts_home,
-                    g.pts_away,
-                    g.wl_home,
-                    g.wl_away,
-                    g.season_type,
-                    g.team_abbreviation_home as home_team_abbrev,
-                    g.team_name_home as home_team_name,
-                    g.team_abbreviation_away as away_team_abbrev,
-                    g.team_name_away as away_team_name
-                FROM game g
-                WHERE 1=1
-            """
-
-            # Так как у нас нет прямого соответствия, получаем все и фильтруем
+            # Получаем все матчи и фильтруем
             matches = self.get_all_matches(limit=10000)
             for match in matches:
                 if match["id"] == match_id:
@@ -176,7 +119,7 @@ class MatchService:
             return None
 
         except Exception as e:
-            print(f"❌ Ошибка получения матча по ID: {e}")
+            print(f"Ошибка получения матча по ID: {e}")
             return None
 
     def create_match(self, match_data, user_id: int) -> Dict[str, Any]:

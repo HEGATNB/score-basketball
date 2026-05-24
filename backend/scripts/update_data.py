@@ -11,11 +11,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config import config
 
-# Устанавливаем кодировку
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# Используем параметры из config
 DB_NAME = config.DB_NAME
 DB_USER = config.DB_USER
 DB_PASSWORD = config.DB_PASSWORD
@@ -114,9 +112,8 @@ def get_db_connection():
     )
     return conn
 
-
+# Найти аббривеатуру
 def find_team_abbrev(team_name: str) -> str:
-    """Находит аббревиатуру команды по названию с частичным совпадением"""
     if not team_name:
         return None
 
@@ -134,7 +131,7 @@ def find_team_abbrev(team_name: str) -> str:
             if part in team_name_lower and len(part) > 3:
                 return abbrev
 
-    # 3. Поиск по аббревиатуре (если вдруг пришла аббревиатура)
+    # 3. Поиск по аббревиатуре
     team_name_upper = team_name.upper()
     if team_name_upper in TEAM_NAME_MAP.values():
         return team_name_upper
@@ -143,8 +140,7 @@ def find_team_abbrev(team_name: str) -> str:
 
 
 def get_team_id_map(conn):
-    """Создание словаря {team_abbreviation: team_id} из таблицы game"""
-    cursor = conn.cursor()
+    #Создание словаря {team_abbreviation: team_id} из таблицы game""".
     cursor.execute("""
         SELECT DISTINCT team_abbreviation_home as abbrev, team_id_home as team_id 
         FROM game 
@@ -179,14 +175,14 @@ def fetch_espn_games(date):
     try:
         response = requests.get(url, params=params, timeout=15)
         if response.status_code != 200:
-            print(f"  ❌ ESPN API error: {response.status_code}")
+            print(f"ESPN API error: {response.status_code}")
             return []
         data = response.json()
         events = data.get('events', [])
-        print(f"  📡 Fetched {len(events)} events from ESPN for {date}")
+        print(f"Fetched {len(events)} events from ESPN for {date}")
         return events
     except Exception as e:
-        print(f"  ❌ Error fetching ESPN: {e}")
+        print(f"Error fetching ESPN: {e}")
         return []
 
 
@@ -250,7 +246,7 @@ def parse_espn_game(event, team_id_map):
 
         # Проверка на специальные игры
         if is_special_game(away_team_name, home_team_name):
-            print(f"  ⏭️ Skipping special game: {away_team_name} vs {home_team_name}")
+            print(f"Skipping special game: {away_team_name} vs {home_team_name}")
             return None
 
         # Находим аббревиатуры
@@ -258,14 +254,14 @@ def parse_espn_game(event, team_id_map):
         home_abbrev = find_team_abbrev(home_team_name) or find_team_abbrev(home_team_short)
 
         if not away_abbrev or not home_abbrev:
-            print(f"  ⚠️ Could not map teams: '{away_team_name}' -> {away_abbrev}, '{home_team_name}' -> {home_abbrev}")
+            print(f"Could not map teams: '{away_team_name}' -> {away_abbrev}, '{home_team_name}' -> {home_abbrev}")
             return None
 
         away_id = team_id_map.get(away_abbrev)
         home_id = team_id_map.get(home_abbrev)
 
         if not away_id or not home_id:
-            print(f"  ⚠️ Team ID not found: {away_abbrev}={away_id}, {home_abbrev}={home_id}")
+            print(f"Team ID not found: {away_abbrev}={away_id}, {home_abbrev}={home_id}")
             return None
 
         away_score = int(away_competitor.get('score', 0) or 0)
@@ -343,7 +339,7 @@ def parse_espn_game(event, team_id_map):
             'video_available_away': 0
         }
     except Exception as e:
-        print(f"  ❌ Error parsing game: {e}")
+        print(f"Error parsing game: {e}")
         return None
 
 
@@ -369,18 +365,17 @@ def insert_game(conn, game):
         conn.commit()
         return True
     except Exception as e:
-        print(f"    ❌ Error inserting game: {e}")
+        print(f" Error inserting game: {e}")
         conn.rollback()
         return False
     finally:
         cursor.close()
 
-
+# Обновляет результаты существующих матчей за последние дни
 def update_existing_games(conn, days_back=2):
-    """Обновляет результаты существующих матчей за последние дни"""
     print(f"\n{'=' * 60}")
-    print("🔄 UPDATING EXISTING GAMES")
-    print(f"📅 Checking games from last {days_back} days")
+    print(" UPDATING EXISTING GAMES")
+    print(f"Checking games from last {days_back} days")
     print(f"{'=' * 60}")
 
     cursor = conn.cursor()
@@ -389,7 +384,7 @@ def update_existing_games(conn, days_back=2):
 
     for i in range(days_back):
         date = today - timedelta(days=i)
-        print(f"\n📅 Checking games for {date}")
+        print(f"\n Checking games for {date}")
 
         cursor.execute("""
             SELECT game_id, team_id_home, team_id_away, team_abbreviation_home, team_abbreviation_away,
@@ -402,14 +397,14 @@ def update_existing_games(conn, days_back=2):
         pending_games = cursor.fetchall()
 
         if not pending_games:
-            print(f"   ✅ No pending games for {date}")
+            print(f"No pending games for {date}")
             continue
 
-        print(f"   📋 Found {len(pending_games)} pending games")
+        print(f"Found {len(pending_games)} pending games")
 
         events = fetch_espn_games(date)
         if not events:
-            print(f"   ⚠️ Could not fetch ESPN data")
+            print(f"Could not fetch ESPN data")
             continue
 
         espn_games = {}
@@ -426,9 +421,7 @@ def update_existing_games(conn, days_back=2):
                 continue
 
         for game in pending_games:
-            # psycopg2 RealDictCursor returns RealDictRow which is already a dict;
-            # earlier the code assumed SQLAlchemy Row (._mapping) and crashed.
-            game_data = dict(game)
+            game_data = dict(game._mapping)
             home_name = game_data.get("team_name_home")
             away_name = game_data.get("team_name_away")
             game_id = game_data.get("game_id")
@@ -515,26 +508,25 @@ def update_existing_games(conn, days_back=2):
 
                 if cursor.rowcount > 0:
                     updated_count += 1
-                    print(f"      ✅ Updated: {home_name} {home_score} - {away_score} {away_name}")
+                    print(f" Updated: {home_name} {home_score} - {away_score} {away_name}")
             except Exception as e:
-                print(f"      ❌ Update error: {e}")
+                print(f"Update error: {e}")
 
         conn.commit()
 
-    print(f"\n📊 UPDATE STATS: {updated_count} games updated")
+    print(f"\n UPDATE STATS: {updated_count} games updated")
     return updated_count
 
-
+# Обновляет данные для scheduled матчей и добавляет новые матчи"""
 def update_db_with_new_games(db_path=None, days_back=2):
-    """Обновляет данные для scheduled матчей и добавляет новые матчи"""
     print(f"\n{'=' * 60}")
-    print(f"🔄 DATABASE UPDATE")
-    print(f"📅 Last {days_back} days")
-    print(f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"DATABASE UPDATE")
+    print(f"Last {days_back} days")
+    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
     conn = get_db_connection()
-    print(f"✅ Connected to database")
+    print(f"Connected to database")
 
     # Обновляем результаты существующих матчей
     updated_results = update_existing_games(conn, days_back)
@@ -552,7 +544,7 @@ def update_db_with_new_games(db_path=None, days_back=2):
 
     for i in range(days_back):
         date = today - timedelta(days=i)
-        print(f"\n📅 Processing {date}")
+        print(f"\n Processing {date}")
         events = fetch_espn_games(date)
 
         for event in events:
@@ -561,7 +553,7 @@ def update_db_with_new_games(db_path=None, days_back=2):
                 failed_count += 1
             elif insert_game(conn, game_record):
                 new_count += 1
-                print(f"  ✅ Added: {game_record['team_abbreviation_away']} @ {game_record['team_abbreviation_home']}")
+                print(f" Added: {game_record['team_abbreviation_away']} @ {game_record['team_abbreviation_home']}")
             else:
                 skipped_count += 1
             time.sleep(0.3)
@@ -572,7 +564,7 @@ def update_db_with_new_games(db_path=None, days_back=2):
     conn.close()
 
     print(f"\n{'=' * 60}")
-    print(f"📊 FINAL STATISTICS:")
+    print(f"FINAL STATISTICS:")
     print(f"   • Updated results: {updated_results}")
     print(f"   • New games added: {new_count}")
     print(f"   • Failed to add: {failed_count}")

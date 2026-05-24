@@ -1,331 +1,69 @@
+# services/team_service.py
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
 from typing import List, Optional, Dict
 
+from repositories.team_repository import TeamRepository
+
 
 class TeamService:
     def __init__(self, db: Session):
         self.db = db
+        self.team_repo = TeamRepository(db)
 
     def get_all_teams(self, skip: int = 0, limit: int = 100):
         try:
-            query = """
-                WITH team_stats AS (
-                    SELECT DISTINCT ON (team_id)
-                        team_id,
-                        season_id,
-                        team_conference,
-                        team_division,
-                        w,
-                        l,
-                        pct,
-                        pts_pg,
-                        opp_pts_pg,
-                        reb_pg,
-                        ast_pg
-                    FROM team_info_common
-                    ORDER BY team_id, season_id DESC
-                )
-                SELECT
-                    t.id,
-                    t.full_name as name,
-                    t.abbreviation as abbrev,
-                    t.full_name,
-                    t.nickname,
-                    t.city,
-                    t.state,
-                    t.year_founded as founded_year,
-                    td.arena,
-                    td.arenacapacity as arena_capacity,
-                    td.headcoach as head_coach,
-                    td.generalmanager as general_manager,
-                    td.owner,
-                    ts.team_conference as stats_conference,
-                    ts.team_division as division,
-                    ts.w as wins,
-                    ts.l as losses,
-                    ts.pct as win_pct,
-                    ts.pts_pg as points_per_game,
-                    ts.opp_pts_pg as points_against,
-                    ts.reb_pg as rebounds_per_game,
-                    ts.ast_pg as assists_per_game
-                FROM team t
-                LEFT JOIN team_details td ON t.id = td.team_id
-                LEFT JOIN team_stats ts ON t.id = ts.team_id
-                ORDER BY t.full_name
-                LIMIT :limit OFFSET :skip
-            """
+            teams = self.team_repo.get_all(skip=skip, limit=limit)
 
-            result = self.db.execute(text(query), {"limit": limit, "skip": skip}).fetchall()
-
-            teams = []
-            for row in result:
-                team_data = dict(row._mapping)
-                conference = team_data.get('stats_conference')
+            # Преобразование данных для совместимости с фронтендом
+            for team in teams:
+                conference = team.get('stats_conference') or team.get('team_conference')
                 conference_id = 0
                 if conference == 'Eastern':
                     conference_id = 1
                 elif conference == 'Western':
                     conference_id = 2
 
-                teams.append({
-                    "id": team_data["id"],
-                    "name": team_data["name"],
-                    "abbrev": team_data["abbrev"],
-                    "full_name": team_data["full_name"],
-                    "nickname": team_data.get("nickname", ""),
-                    "city": team_data.get("city", ""),
-                    "state": team_data.get("state", ""),
-                    "arena": team_data.get("arena", f"{team_data['name']} Arena"),
-                    "arena_capacity": team_data.get("arena_capacity", 0),
-                    "founded_year": team_data.get("founded_year", 1970),
-                    "head_coach": team_data.get("head_coach", "Unknown"),
-                    "general_manager": team_data.get("general_manager", "Unknown"),
-                    "owner": team_data.get("owner", "Unknown"),
-                    "conference": conference,
-                    "conference_id": conference_id,
-                    "division": team_data.get("division", "Unknown"),
-                    "wins": team_data.get("wins", 0) or 0,
-                    "losses": team_data.get("losses", 0) or 0,
-                    "win_pct": float(team_data.get("win_pct", 0) or 0),
-                    "points_per_game": float(team_data.get("points_per_game", 0) or 0),
-                    "points_against": float(team_data.get("points_against", 0) or 0),
-                    "rebounds_per_game": float(team_data.get("rebounds_per_game", 0) or 0),
-                    "assists_per_game": float(team_data.get("assists_per_game", 0) or 0),
-                    "championships": 0
-                })
+                team['conference_id'] = conference_id
+                team['conference'] = conference
+
+                # Преобразуем None в 0 для числовых полей
+                team['points_per_game'] = float(team.get('points_per_game') or 0)
+                team['points_against'] = float(team.get('points_against') or 0)
+                team['win_pct'] = float(team.get('win_pct') or 0)
+                team['wins'] = int(team.get('wins') or 0)
+                team['losses'] = int(team.get('losses') or 0)
+                team['rebounds_per_game'] = float(team.get('rebounds_per_game') or 0)
+                team['assists_per_game'] = float(team.get('assists_per_game') or 0)
 
             return teams
 
         except Exception as e:
-            self.db.rollback()
             print(f"Ошибка получения команд: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def get_team_by_id(self, team_id: int) -> Optional[Dict]:
-        try:
-            team_id_str = str(team_id)
-            query = """
-                SELECT
-                    t.id,
-                    t.full_name as name,
-                    t.abbreviation as abbrev,
-                    t.nickname,
-                    t.city,
-                    t.state,
-                    t.year_founded as founded_year
-                FROM team t
-                WHERE t.id = :team_id
-            """
-
-            result = self.db.execute(text(query), {"team_id": team_id_str}).fetchone()
-
-            if result:
-                team_data = dict(result._mapping)
-                team_conference = None
-
-                stats_query = """
-                    SELECT 
-                        w, l, pct, pts_pg, opp_pts_pg, reb_pg, ast_pg,
-                        team_conference as conference,
-                        team_division as division
-                    FROM team_info_common
-                    WHERE team_id = :team_id
-                    ORDER BY season_id DESC
-                    LIMIT 1
-                """
-
-                stats = self.db.execute(text(stats_query), {"team_id": team_id_str}).fetchone()
-
-                conference = None
-                division = None
-                wins = 0
-                losses = 0
-                win_pct = 0
-                points_per_game = 0
-                points_against = 0
-                rebounds_per_game = 0
-                assists_per_game = 0
-
-                if stats:
-                    stats_data = dict(stats._mapping)
-                    conference = stats_data.get('conference') or team_conference
-                    division = stats_data.get('division')
-                    wins = stats_data.get('w', 0) or 0
-                    losses = stats_data.get('l', 0) or 0
-                    win_pct = float(stats_data.get('pct', 0) or 0)
-                    points_per_game = float(stats_data.get('pts_pg', 0) or 0)
-                    points_against = float(stats_data.get('opp_pts_pg', 0) or 0)
-                    rebounds_per_game = float(stats_data.get('reb_pg', 0) or 0)
-                    assists_per_game = float(stats_data.get('ast_pg', 0) or 0)
-                else:
-                    conference = team_conference
-
-                details_query = """
-                    SELECT arena, arenacapacity as arena_capacity, headcoach as head_coach,
-                           generalmanager as general_manager, owner
-                    FROM team_details
-                    WHERE team_id = :team_id
-                """
-                details = self.db.execute(text(details_query), {"team_id": team_id_str}).fetchone()
-
-                arena = None
-                arena_capacity = 0
-                head_coach = "Unknown"
-                general_manager = "Unknown"
-                owner = "Unknown"
-
-                if details:
-                    details_data = dict(details._mapping)
-                    arena = details_data.get('arena')
-                    arena_capacity = details_data.get('arena_capacity', 0)
-                    head_coach = details_data.get('head_coach', "Unknown")
-                    general_manager = details_data.get('general_manager', "Unknown")
-                    owner = details_data.get('owner', "Unknown")
-
-                conference_id = 0
-                if conference == 'Eastern':
-                    conference_id = 1
-                elif conference == 'Western':
-                    conference_id = 2
-
-                return {
-                    "id": team_data["id"],
-                    "name": team_data["name"],
-                    "abbrev": team_data["abbrev"],
-                    "full_name": team_data["name"],
-                    "nickname": team_data.get("nickname", ""),
-                    "city": team_data.get("city", ""),
-                    "state": team_data.get("state", ""),
-                    "arena": arena or f"{team_data['name']} Arena",
-                    "arena_capacity": arena_capacity,
-                    "founded_year": team_data.get("founded_year", 1970),
-                    "head_coach": head_coach,
-                    "general_manager": general_manager,
-                    "owner": owner,
-                    "conference": conference,
-                    "conference_id": conference_id,
-                    "division": division or "Unknown",
-                    "wins": wins,
-                    "losses": losses,
-                    "win_pct": win_pct,
-                    "points_per_game": points_per_game,
-                    "points_against": points_against,
-                    "rebounds_per_game": rebounds_per_game,
-                    "assists_per_game": assists_per_game,
-                    "championships": 0
-                }
-
-            game_query = """
-                SELECT 
-                    CASE 
-                        WHEN team_id_home = :team_id THEN team_id_home
-                        ELSE team_id_away
-                    END as id,
-                    CASE 
-                        WHEN team_id_home = :team_id THEN team_name_home
-                        ELSE team_name_away
-                    END as name,
-                    CASE 
-                        WHEN team_id_home = :team_id THEN team_abbreviation_home
-                        ELSE team_abbreviation_away
-                    END as abbrev
-                FROM game 
-                WHERE team_id_home = :team_id OR team_id_away = :team_id 
-                LIMIT 1
-            """
-
-            result = self.db.execute(text(game_query), {"team_id": team_id_str}).fetchone()
-
-            if result:
-                team_data = dict(result._mapping)
-                return {
-                    "id": team_data["id"],
-                    "name": team_data["name"],
-                    "abbrev": team_data["abbrev"],
-                    "full_name": team_data["name"],
-                    "nickname": "",
-                    "city": "",
-                    "state": "",
-                    "arena": f"{team_data['name']} Arena",
-                    "arena_capacity": 0,
-                    "founded_year": 1970,
-                    "head_coach": "Unknown",
-                    "general_manager": "Unknown",
-                    "owner": "Unknown",
-                    "conference": None,
-                    "conference_id": 0,
-                    "division": "Unknown",
-                    "wins": 0,
-                    "losses": 0,
-                    "win_pct": 0,
-                    "points_per_game": 0,
-                    "points_against": 0,
-                    "rebounds_per_game": 0,
-                    "assists_per_game": 0,
-                    "championships": 0
-                }
-
-            return None
-
-        except Exception as e:
-            self.db.rollback()
-            print(f"Ошибка получения команды по ID {team_id}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        return self.team_repo.get_by_id(team_id)
 
     def get_team_by_name(self, name: str) -> Optional[Dict]:
-        try:
-            query = """
-                SELECT id, full_name as name, abbreviation as abbrev
-                FROM team
-                WHERE full_name ILIKE :name OR abbreviation ILIKE :name
-                LIMIT 1
-            """
-            result = self.db.execute(text(query), {"name": f"%{name}%"}).fetchone()
-
-            if result:
-                return dict(result._mapping)
-            return None
-        except Exception as e:
-            print(f"Ошибка получения команды по названию: {e}")
-            return None
+        return self.team_repo.get_by_name(name)
 
     def create_team(self, team_data, user_id: int):
         try:
-            check_table = self.db.execute(text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_name = 'team'
-                )
-            """)).scalar()
-
-            if not check_table:
-                return self._create_team_in_game(team_data, user_id)
-            result = self.db.execute(
-                text("""
-                    INSERT INTO team (full_name, abbreviation, nickname, city, state, year_founded)
-                    VALUES (:name, :abbrev, :nickname, :city, :state, :year_founded)
-                    RETURNING id, full_name as name, abbreviation as abbrev
-                """),
-                {
-                    "name": team_data.full_name,
-                    "abbrev": team_data.abbrev,
-                    "nickname": team_data.nickname,
-                    "city": team_data.city,
-                    "state": team_data.state,
-                    "year_founded": team_data.founded_year
-                }
+            team = self.team_repo.create(
+                full_name=team_data.full_name,
+                abbrev=team_data.abbrev,
+                nickname=getattr(team_data, 'nickname', None),
+                city=getattr(team_data, 'city', None),
+                state=getattr(team_data, 'state', None),
+                year_founded=getattr(team_data, 'founded_year', None)
             )
-            self.db.commit()
-
-            team = dict(result.fetchone()._mapping)
             return team
 
         except Exception as e:
-            self.db.rollback()
             print(f"Ошибка создания команды: {e}")
             raise
 
@@ -364,62 +102,29 @@ class TeamService:
             if not team:
                 raise ValueError(f"Team with id {team_id} not found")
 
-            update_fields = []
-            params = {"team_id": team_id}
+            # Подготавливаем данные для обновления через репозиторий
+            update_data = {}
+            if hasattr(team_data, 'name') and team_data.name is not None:
+                update_data['full_name'] = team_data.name
+            if hasattr(team_data, 'nickname') and team_data.nickname is not None:
+                update_data['nickname'] = team_data.nickname
+            if hasattr(team_data, 'city') and team_data.city is not None:
+                update_data['city'] = team_data.city
+            if hasattr(team_data, 'state') and team_data.state is not None:
+                update_data['state'] = team_data.state
 
-            if team_data.name is not None:
-                update_fields.append("full_name = :name")
-                params["name"] = team_data.name
-            if team_data.nickname is not None:
-                update_fields.append("nickname = :nickname")
-                params["nickname"] = team_data.nickname
-            if team_data.city is not None:
-                update_fields.append("city = :city")
-                params["city"] = team_data.city
-            if team_data.state is not None:
-                update_fields.append("state = :state")
-                params["state"] = team_data.state
+            if update_data:
+                self.team_repo.update(team_id, **update_data)
 
-            if update_fields:
-                query = f"UPDATE team SET {', '.join(update_fields)} WHERE id = :team_id"
-                self.db.execute(text(query), params)
-                self.db.commit()
-
-            if team_data.arena is not None or team_data.head_coach is not None:
-                exists = self.db.execute(
-                    text("SELECT 1 FROM team_details WHERE team_id = :team_id"),
-                    {"team_id": team_id}
-                ).fetchone()
-
-                if exists:
-                    update_details = []
-                    if team_data.arena is not None:
-                        update_details.append("arena = :arena")
-                    if team_data.head_coach is not None:
-                        update_details.append("headcoach = :head_coach")
-                    if team_data.general_manager is not None:
-                        update_details.append("generalmanager = :general_manager")
-                    if team_data.owner is not None:
-                        update_details.append("owner = :owner")
-
-                    if update_details:
-                        query = f"UPDATE team_details SET {', '.join(update_details)} WHERE team_id = :team_id"
-                        self.db.execute(text(query), params)
-                else:
-                    self.db.execute(
-                        text("""
-                            INSERT INTO team_details (team_id, arena, headcoach, generalmanager, owner)
-                            VALUES (:team_id, :arena, :head_coach, :general_manager, :owner)
-                        """),
-                        {
-                            "team_id": team_id,
-                            "arena": team_data.arena,
-                            "head_coach": team_data.head_coach,
-                            "general_manager": team_data.general_manager,
-                            "owner": team_data.owner
-                        }
-                    )
-                self.db.commit()
+            # Обновление team_details
+            if hasattr(team_data, 'arena') and team_data.arena is not None:
+                self.team_repo.update_details(team_id, arena=team_data.arena)
+            if hasattr(team_data, 'head_coach') and team_data.head_coach is not None:
+                self.team_repo.update_details(team_id, headcoach=team_data.head_coach)
+            if hasattr(team_data, 'general_manager') and team_data.general_manager is not None:
+                self.team_repo.update_details(team_id, generalmanager=team_data.general_manager)
+            if hasattr(team_data, 'owner') and team_data.owner is not None:
+                self.team_repo.update_details(team_id, owner=team_data.owner)
 
             return self.get_team_by_id(team_id)
 
@@ -444,16 +149,8 @@ class TeamService:
 
             if matches_count > 0:
                 raise ValueError(f"Cannot delete team with {matches_count} existing games")
-            self.db.execute(
-                text("DELETE FROM team_details WHERE team_id = :team_id"),
-                {"team_id": team_id}
-            )
-            self.db.execute(
-                text("DELETE FROM team WHERE id = :team_id"),
-                {"team_id": team_id}
-            )
 
-            self.db.commit()
+            self.team_repo.delete(team_id)
             return team
 
         except Exception as e:
