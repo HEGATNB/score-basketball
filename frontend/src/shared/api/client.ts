@@ -42,6 +42,7 @@ export interface Match {
 
 export interface Player {
   id: number;
+  nba_person_id?: number | null;
   first_name: string;
   last_name: string;
   full_name?: string;
@@ -77,16 +78,19 @@ export interface Player {
   player_weight?: number;
   age?: number;
   team_abbrev?: string;
+  team_abbreviation?: string;
 }
 
 export interface Player {
   id: number;
+  /** Real NBA person_id from common_player_info — drives cdn.nba.com headshots */
+  nba_person_id?: number | null;
   first_name: string;
   last_name: string;
   number?: string;
   position?: string;
   height?: string;
-  weight?: number;  // ДОЛЖНО БЫТЬ number, НЕ string!
+  weight?: number;
   minutes_per_game?: number;
   points_per_game: number;
   rebounds_per_game: number;
@@ -110,6 +114,25 @@ export interface Player {
   defensive_rebound_pct?: number;
   age?: number;
   team_abbrev?: string;
+}
+
+export interface Prediction {
+  id: string;
+  team1Id: number;
+  team2Id: number;
+  team1?: Team;
+  team2?: Team;
+  probabilityTeam1: number;
+  probabilityTeam2: number;
+  expectedScoreTeam1: number;
+  expectedScoreTeam2: number;
+  confidence: number;
+  createdAt: string;
+  probabilities: { team1: number; team2: number };
+  expectedScore: { team1: number; team2: number };
+  modelVersion?: string;
+  trainingDataPoints?: number;
+  factors?: unknown;
 }
 
 export interface AdminUser extends AuthUser {
@@ -162,37 +185,50 @@ function normalizeUser(raw: any): AuthUser {
     username: raw?.username || email.split('@')[0] || name.toLowerCase(),
     name,
     role: raw?.role || 'user',
-    isBlocked: Boolean(raw?.isBlocked),
+    isBlocked: Boolean(raw?.isBlocked ?? raw?.is_blocked),
   };
 }
 
 function normalizeTeam(raw: any): Team {
+  const name = raw?.fullName || raw?.full_name || raw?.name || 'Unknown team';
+  const abbrev = raw?.abbrev || raw?.abbreviation || undefined;
+  const pointsFor = raw?.pointsFor ?? raw?.points_per_game ?? raw?.pointsPerGame ?? 0;
+  const pointsAgainst = raw?.pointsAgainst ?? raw?.points_against ?? 0;
+  const conference =
+    typeof raw?.conference === 'string'
+      ? { name: raw.conference, shortName: raw.conference }
+      : raw?.conference
+        ? { name: raw.conference.name, shortName: raw.conference.shortName }
+        : undefined;
+
   const brand = getTeamBrand({
-    abbrev: raw?.abbrev,
-    name: raw?.fullName || raw?.name,
+    abbrev,
+    name,
   });
 
   return {
     id: Number(raw?.id || 0),
-    name: raw?.fullName || raw?.name || 'Unknown team',
+    name,
     city: raw?.city || undefined,
-    abbrev: raw?.abbrev || undefined,
+    abbrev,
     arena: raw?.arena || undefined,
     wins: Number(raw?.wins ?? raw?.seasonWins ?? 0),
     losses: Number(raw?.losses ?? raw?.seasonLosses ?? 0),
-    avgPointsFor: Number(raw?.pointsFor ?? raw?.pointsPerGame ?? 0),
-    avgPointsAgainst: Number(raw?.pointsAgainst ?? 0),
+    avgPointsFor: Number(pointsFor),
+    avgPointsAgainst: Number(pointsAgainst),
     championships: Number(raw?.championships ?? 0),
-    foundedYear: raw?.foundedYear ?? undefined,
-    pointsPerGame: Number(raw?.pointsPerGame ?? raw?.pointsFor ?? 0),
-    pointsAgainst: Number(raw?.pointsAgainst ?? 0),
+    foundedYear: raw?.foundedYear ?? raw?.founded_year ?? undefined,
+    pointsPerGame: Number(pointsFor),
+    pointsAgainst: Number(pointsAgainst),
     logoUrl: raw?.logoUrl || brand.logoUrl,
     brandColor: raw?.brandColor || brand.brandColor,
     accentColor: raw?.accentColor || brand.accentColor,
-    conference: raw?.conference
-      ? { name: raw.conference.name, shortName: raw.conference.shortName }
-      : undefined,
-    division: raw?.division ? { name: raw.division.name } : undefined,
+    conference,
+    division: typeof raw?.division === 'string'
+      ? { name: raw.division }
+      : raw?.division
+        ? { name: raw.division.name }
+        : undefined,
   };
 }
 
@@ -228,13 +264,26 @@ function normalizeMatch(raw: any): Match {
 }
 
 function normalizePlayer(raw: any): Player {
+  const teamAbbrev = raw?.team_abbrev || raw?.team_abbreviation || raw?.team?.abbrev;
+  const rawTeam = raw?.team || (teamAbbrev
+    ? {
+        id: raw?.team_id,
+        name: raw?.team_name || teamAbbrev,
+        abbrev: teamAbbrev,
+        city: raw?.team_city,
+        foundedYear: raw?.team_founded_year,
+      }
+    : null);
+
   return {
     id: Number(raw?.id || 0),
+    nba_person_id: raw?.nba_person_id != null ? Number(raw.nba_person_id) : null,
     first_name: raw?.first_name || raw?.firstName || '',
     last_name: raw?.last_name || raw?.lastName || '',
-    number: raw?.number ? Number(raw.number) : undefined,
+    full_name: raw?.full_name || raw?.fullName || raw?.player_name || undefined,
+    number: raw?.number ? String(raw.number) : undefined,
     position: raw?.position || undefined,
-    team_id: 0,
+    team_id: Number(raw?.team_id || raw?.team?.id || 0),
     height: raw?.height ? raw.height : undefined,
     weight: raw?.weight ? Number(raw.weight) : undefined,
     birth_date: raw?.birth_date || undefined,
@@ -256,15 +305,14 @@ function normalizePlayer(raw: any): Player {
     usage_rate: raw?.usage_rate,
     true_shooting: raw?.true_shooting,
     net_rating: raw?.net_rating,
-    team: raw?.team_abbrev ? {
-      id: 0,
-      name: raw.team_abbrev,
-      abbrev: raw.team_abbrev,
-      wins: 0,
-      losses: 0,
-      avgPointsFor: 0,
-      avgPointsAgainst: 0
-    } : undefined
+    assist_percentage: raw?.assist_percentage,
+    offensive_rebound_pct: raw?.offensive_rebound_pct,
+    defensive_rebound_pct: raw?.defensive_rebound_pct,
+    player_height: raw?.player_height,
+    player_weight: raw?.player_weight,
+    age: raw?.age,
+    team_abbrev: teamAbbrev,
+    team: rawTeam ? normalizeTeam(rawTeam) : undefined
   };
 }
 
@@ -358,11 +406,29 @@ function normalizeByEndpoint(endpoint: string, payload: any): any {
     return Array.isArray(payload) ? payload.map(normalizeMatch) : normalizeMatch(payload);
   }
 
-  if (endpoint.startsWith('/players')) {
+  // Only the player list endpoints — /players/seasons returns string[]
+  // and must NOT be put through normalizePlayer (otherwise strings turn
+  // into Player-shaped objects and crash the page with React error #31).
+  if (
+    endpoint === '/players' ||
+    endpoint.startsWith('/players?') ||
+    endpoint.startsWith('/players/team/') ||
+    /^\/players\/\d+/.test(endpoint)
+  ) {
     return Array.isArray(payload) ? payload.map(normalizePlayer) : normalizePlayer(payload);
   }
 
-  if (endpoint.startsWith('/predictions') || endpoint.startsWith('/predict')) {
+  // Only the prediction CRUD endpoints — NOT /predictions/my/stats (returns
+  // an aggregate object with categories/streak/etc.) nor /predict/stats
+  // (returns model accuracy stats). If we run those through normalizePrediction
+  // we lose all the fields and the cabinet crashes on `categories.underdog`.
+  if (
+    endpoint === '/predictions' ||
+    endpoint.startsWith('/predictions?') ||
+    /^\/predictions\/[a-zA-Z0-9_-]+$/.test(endpoint) || // /predictions/{id}
+    endpoint === '/predict' ||
+    endpoint.startsWith('/predict?')
+  ) {
     return Array.isArray(payload) ? payload.map(normalizePrediction) : normalizePrediction(payload);
   }
 
@@ -376,6 +442,35 @@ function normalizeByEndpoint(endpoint: string, payload: any): any {
 
   if (endpoint.startsWith('/admin/backups') || endpoint.startsWith('/admin/backup')) {
     return Array.isArray(payload) ? payload.map(normalizeBackup) : normalizeBackup(payload);
+  }
+
+  if (endpoint.startsWith('/home/summary')) {
+    return {
+      ...payload,
+      featuredMatch: payload?.featuredMatch ? normalizeMatch(payload.featuredMatch) : null,
+      upcomingMatches: Array.isArray(payload?.upcomingMatches)
+        ? payload.upcomingMatches.map(normalizeMatch)
+        : [],
+      recentMatches: Array.isArray(payload?.recentMatches)
+        ? payload.recentMatches.map(normalizeMatch)
+        : [],
+      topTeams: Array.isArray(payload?.topTeams) ? payload.topTeams.map(normalizeTeam) : [],
+      topPlayers: Array.isArray(payload?.topPlayers)
+        ? payload.topPlayers.map(normalizePlayer)
+        : [],
+    };
+  }
+
+  if (endpoint.startsWith('/home/leaderboard')) {
+    return Array.isArray(payload) ? payload.map(normalizePlayer) : payload;
+  }
+
+  if (endpoint.startsWith('/home/search')) {
+    return {
+      ...payload,
+      teams: Array.isArray(payload?.teams) ? payload.teams.map(normalizeTeam) : [],
+      players: Array.isArray(payload?.players) ? payload.players.map(normalizePlayer) : [],
+    };
   }
 
   return payload;
@@ -411,7 +506,7 @@ export async function requestJson<T>(endpoint: string, options?: RequestInit, us
       localStorage.removeItem(TOKEN_KEY);
       throw new Error('Session expired. Please login again.');
     }
-    throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
+    throw new Error(parsed?.detail || parsed?.error || parsed?.message || `HTTP ${response.status}`);
   }
 
   const normalized = normalizeByEndpoint(endpoint, parsed) as T;

@@ -109,6 +109,7 @@ class PlayerService:
 
                 players.append({
                     "id": latest.get("id"),
+                    "nba_person_id": latest.get("nba_person_id"),
                     "first_name": first_name,
                     "last_name": last_name,
                     "full_name": full_name,
@@ -207,6 +208,7 @@ class PlayerService:
 
             return {
                 "id": current.get("id"),
+                "nba_person_id": current.get("nba_person_id"),
                 "first_name": first_name,
                 "last_name": last_name,
                 "full_name": full_name,
@@ -244,6 +246,90 @@ class PlayerService:
 
         except Exception as e:
             print(f"Ошибка получения игрока по ID: {e}")
+            return None
+
+    def get_player_seasons_breakdown(self, player_id: int) -> Optional[Dict[str, Any]]:
+        """Per-season stats for the PlayerDetailModal on the frontend.
+
+        Returns career averages, season-by-season rows, and the unique list
+        of teams the player has appeared for.
+        """
+        try:
+            player_data = self.player_repo.get_by_id(player_id)
+            if not player_data:
+                return None
+            player_name = player_data["player_name"]
+
+            check_common = self.player_repo.check_common_player_info_exists()
+            rows = (
+                self.player_repo.get_all_by_name_with_position(player_name)
+                if check_common
+                else self.player_repo.get_all_by_name(player_name)
+            )
+            if not rows:
+                return None
+
+            seasons = []
+            career_pts = career_reb = career_ast = 0.0
+            total_games = 0
+            for d in rows:
+                gp = int(d.get("games_played") or 0)
+                pts = float(d.get("points_per_game") or 0)
+                reb = float(d.get("rebounds_per_game") or 0)
+                ast = float(d.get("assists_per_game") or 0)
+                total_games += gp
+                career_pts += pts * gp
+                career_reb += reb * gp
+                career_ast += ast * gp
+                seasons.append({
+                    "season": d.get("season"),
+                    "team_abbrev": d.get("team_abbreviation"),
+                    "team_name": d.get("team_name"),
+                    "team_city": d.get("team_city"),
+                    "games_played": gp,
+                    "points_per_game": round(pts, 1),
+                    "rebounds_per_game": round(reb, 1),
+                    "assists_per_game": round(ast, 1),
+                    "net_rating": float(d.get("net_rating") or 0),
+                    "usage_rate": float(d.get("usage_rate") or 0),
+                    "true_shooting": float(d.get("true_shooting") or 0),
+                    "assist_percentage": float(d.get("assist_percentage") or 0),
+                    "offensive_rebound_pct": float(d.get("oreb_pct") or 0),
+                    "defensive_rebound_pct": float(d.get("dreb_pct") or 0),
+                    "age": float(d.get("age") or 0),
+                })
+
+            career = {
+                "seasons_count": len(seasons),
+                "games": total_games,
+                "points_per_game": round(career_pts / total_games, 1) if total_games else 0,
+                "rebounds_per_game": round(career_reb / total_games, 1) if total_games else 0,
+                "assists_per_game": round(career_ast / total_games, 1) if total_games else 0,
+            }
+
+            teams_seen: List[Dict[str, Any]] = []
+            seen = set()
+            for s in seasons:
+                ab = s.get("team_abbrev")
+                if ab and ab not in seen:
+                    seen.add(ab)
+                    teams_seen.append({
+                        "abbrev": ab,
+                        "name": s.get("team_name"),
+                        "city": s.get("team_city"),
+                        "first_season": s.get("season"),
+                    })
+
+            return {
+                "player_name": player_name,
+                "career": career,
+                "seasons": seasons,
+                "teams": teams_seen,
+            }
+        except Exception as e:
+            print(f"Error in get_player_seasons_breakdown: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_players_by_team(self, team_abbrev: str) -> List[Dict[str, Any]]:

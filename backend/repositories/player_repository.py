@@ -9,12 +9,35 @@ class PlayerRepository(BaseRepository):
     def __init__(self, db: Session):
         super().__init__(db)
 
+    def check_common_player_info_exists(self) -> bool:
+        """Опционально таблица common_player_info — даёт position + nba person_id."""
+        query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'common_player_info'
+            )
+        """
+        return bool(self._fetch_scalar(query))
+
     def get_all(self, team_abbrev: str = None, season: str = None, search: str = None,
                 min_games: int = 5, sort_by: str = 'pts', sort_order: str = 'desc',
                 skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
 
-        query = """
-            SELECT 
+        # If common_player_info is present we LEFT JOIN it for c.position +
+        # c.person_id (real NBA id, drives cdn.nba.com headshots on the frontend).
+        has_common = self.check_common_player_info_exists()
+        position_select = (
+            "c.position, c.person_id as nba_person_id"
+            if has_common
+            else "NULL as position, NULL as nba_person_id"
+        )
+        position_join = (
+            "LEFT JOIN common_player_info c ON p.player_name = c.display_first_last"
+            if has_common else ""
+        )
+
+        query = f"""
+            SELECT
                 p.id,
                 p.player_name,
                 p.team_abbreviation,
@@ -43,9 +66,11 @@ class PlayerRepository(BaseRepository):
                 t.nickname as team_nickname,
                 t.city as team_city,
                 t.state as team_state,
-                t.year_founded as team_founded_year
+                t.year_founded as team_founded_year,
+                {position_select}
             FROM players p
             LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
+            {position_join}
             WHERE p.gp >= :min_games
         """
         params = {"min_games": min_games}
@@ -152,6 +177,70 @@ class PlayerRepository(BaseRepository):
         results = self._fetch_all(query, {"min_games": min_games})
         results.sort(key=lambda x: x.get("value", 0), reverse=True)
         return results[:limit]
+
+    def get_all_by_name(self, player_name: str) -> List[Dict[str, Any]]:
+        """Каждая запись = один сезон для игрока (без position)."""
+        query = """
+            SELECT
+                p.id, p.player_name, p.team_abbreviation,
+                p.age, p.player_height, p.player_weight,
+                p.college, p.country,
+                p.draft_year, p.draft_round, p.draft_number,
+                p.gp as games_played,
+                p.pts as points_per_game,
+                p.reb as rebounds_per_game,
+                p.ast as assists_per_game,
+                p.net_rating, p.oreb_pct, p.dreb_pct,
+                p.usg_pct as usage_rate, p.ts_pct as true_shooting,
+                p.ast_pct as assist_percentage,
+                p.season,
+                t.id as team_id,
+                t.full_name as team_name,
+                t.abbreviation as team_abbrev,
+                t.nickname as team_nickname,
+                t.city as team_city,
+                t.state as team_state,
+                t.year_founded as team_founded_year,
+                NULL as position, NULL as nba_person_id
+            FROM players p
+            LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
+            WHERE p.player_name = :name
+            ORDER BY p.season DESC
+        """
+        return self._fetch_all(query, {"name": player_name})
+
+    def get_all_by_name_with_position(self, player_name: str) -> List[Dict[str, Any]]:
+        """Каждая запись = один сезон для игрока (включая position + nba person_id)."""
+        query = """
+            SELECT
+                p.id, p.player_name, p.team_abbreviation,
+                p.age, p.player_height, p.player_weight,
+                p.college, p.country,
+                p.draft_year, p.draft_round, p.draft_number,
+                p.gp as games_played,
+                p.pts as points_per_game,
+                p.reb as rebounds_per_game,
+                p.ast as assists_per_game,
+                p.net_rating, p.oreb_pct, p.dreb_pct,
+                p.usg_pct as usage_rate, p.ts_pct as true_shooting,
+                p.ast_pct as assist_percentage,
+                p.season,
+                t.id as team_id,
+                t.full_name as team_name,
+                t.abbreviation as team_abbrev,
+                t.nickname as team_nickname,
+                t.city as team_city,
+                t.state as team_state,
+                t.year_founded as team_founded_year,
+                c.position,
+                c.person_id as nba_person_id
+            FROM players p
+            LEFT JOIN team t ON p.team_abbreviation = t.abbreviation
+            LEFT JOIN common_player_info c ON p.player_name = c.display_first_last
+            WHERE p.player_name = :name
+            ORDER BY p.season DESC
+        """
+        return self._fetch_all(query, {"name": player_name})
 
     def count(self) -> int:
         query = "SELECT COUNT(*) FROM players"

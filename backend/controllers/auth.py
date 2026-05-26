@@ -76,6 +76,21 @@ async def login(
                     }
 
         if not user:
+            from sqlalchemy import text
+            blocked = db.execute(
+                text("""
+                    SELECT is_blocked FROM users
+                    WHERE email = :identifier OR username = :identifier OR name = :identifier
+                    LIMIT 1
+                """),
+                {"identifier": identifier}
+            ).fetchone()
+            if blocked and blocked._mapping.get("is_blocked"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Пользователь заблокирован"
+                )
+
             print(f"Неудачная попытка входа для {identifier}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

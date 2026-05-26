@@ -141,6 +141,7 @@ def find_team_abbrev(team_name: str) -> str:
 
 def get_team_id_map(conn):
     #Создание словаря {team_abbreviation: team_id} из таблицы game""".
+    cursor = conn.cursor()
     cursor.execute("""
         SELECT DISTINCT team_abbreviation_home as abbrev, team_id_home as team_id 
         FROM game 
@@ -156,6 +157,38 @@ def get_team_id_map(conn):
     team_map['ALL'] = 0
     print(f"  Found {len(team_map)} teams in database")
     return team_map
+
+
+def get_update_window_days(conn, minimum_days=2, max_days=120):
+    """Возвращает окно догрузки от последней даты в game до текущего дня."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT MAX(game_date) AS last_game_date
+            FROM game
+            WHERE game_date IS NOT NULL
+        """)
+        row = cursor.fetchone()
+        raw_last_date = row.get('last_game_date') if row else None
+        if not raw_last_date:
+            return minimum_days
+
+        if isinstance(raw_last_date, datetime):
+            last_date = raw_last_date.date()
+        else:
+            raw_text = str(raw_last_date).strip()
+            try:
+                last_date = datetime.fromisoformat(raw_text.replace('Z', '+00:00')).date()
+            except ValueError:
+                last_date = datetime.strptime(raw_text[:19], "%Y-%m-%d %H:%M:%S").date()
+
+        gap_days = (datetime.now().date() - last_date).days + 1
+        return max(minimum_days, min(gap_days, max_days))
+    except Exception as e:
+        print(f"Could not calculate update window, fallback to {minimum_days} days: {e}")
+        return minimum_days
+    finally:
+        cursor.close()
 
 
 def is_special_game(away_name, home_name):
@@ -413,15 +446,22 @@ def update_existing_games(conn, days_back=2):
                 competitions = event.get('competitions', [{}])[0]
                 competitors = competitions.get('competitors', [])
                 if len(competitors) >= 2:
-                    away_name = competitors[0].get('team', {}).get('displayName', '')
-                    home_name = competitors[1].get('team', {}).get('displayName', '')
-                    espn_games[f"{home_name}_{away_name}"] = event
+                    home_name = ''
+                    away_name = ''
+                    for competitor in competitors:
+                        team_name = competitor.get('team', {}).get('displayName', '')
+                        if competitor.get('homeAway') == 'home':
+                            home_name = team_name
+                        else:
+                            away_name = team_name
+                    if home_name and away_name:
+                        espn_games[f"{home_name}_{away_name}"] = event
                     espn_games[event.get('id')] = event
             except Exception:
                 continue
 
         for game in pending_games:
-            game_data = dict(game._mapping)
+            game_data = dict(game)
             home_name = game_data.get("team_name_home")
             away_name = game_data.get("team_name_away")
             game_id = game_data.get("game_id")
@@ -475,8 +515,7 @@ def update_existing_games(conn, days_back=2):
                         ftm_away = %s, fta_away = %s, ft_pct_away = %s,
                         oreb_away = %s, dreb_away = %s, reb_away = %s,
                         ast_away = %s, stl_away = %s, blk_away = %s,
-                        tov_away = %s, pf_away = %s,
-                        updated_at = CURRENT_TIMESTAMP
+                        tov_away = %s, pf_away = %s
                     WHERE game_id = %s
                 """, (
                     home_score, away_score,
@@ -519,13 +558,15 @@ def update_existing_games(conn, days_back=2):
 
 # Обновляет данные для scheduled матчей и добавляет новые матчи"""
 def update_db_with_new_games(db_path=None, days_back=2):
+    conn = get_db_connection()
+    days_back = get_update_window_days(conn, minimum_days=days_back)
+
     print(f"\n{'=' * 60}")
     print(f"DATABASE UPDATE")
     print(f"Last {days_back} days")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
-    conn = get_db_connection()
     print(f"Connected to database")
 
     # Обновляем результаты существующих матчей

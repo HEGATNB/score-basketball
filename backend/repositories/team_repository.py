@@ -27,7 +27,7 @@ class TeamRepository(BaseRepository):
                 FROM team_info_common
                 ORDER BY team_id, season_id DESC
             )
-            SELECT 
+            SELECT
                 t.id,
                 t.full_name as name,
                 t.abbreviation as abbrev,
@@ -36,7 +36,6 @@ class TeamRepository(BaseRepository):
                 t.city,
                 t.state,
                 t.year_founded as founded_year,
-                t.conference as team_conference,
                 td.arena,
                 td.arenacapacity as arena_capacity,
                 td.headcoach as head_coach,
@@ -64,15 +63,14 @@ class TeamRepository(BaseRepository):
 
         # Основная информация
         query = """
-            SELECT 
+            SELECT
                 t.id,
                 t.full_name as name,
                 t.abbreviation as abbrev,
                 t.nickname,
                 t.city,
                 t.state,
-                t.year_founded as founded_year,
-                t.conference as team_conference
+                t.year_founded as founded_year
             FROM team t
             WHERE t.id = :team_id
         """

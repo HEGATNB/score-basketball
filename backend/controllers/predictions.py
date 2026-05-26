@@ -7,6 +7,7 @@ from database import get_db
 from services.ai_service import AIService
 from services.team_service import TeamService
 from services.audit_service import AuditService
+from services.user_stats_service import UserStatsService, evaluate_challenges
 from middleware.auth import get_current_user, require_admin
 import schemas
 
@@ -232,3 +233,78 @@ async def train_on_match(
         "message": "Модель успешно обучена на реальном результате",
         "result": result
     }
+
+
+# ============================================================
+# User stats / cabinet / challenges / leaderboard
+# ============================================================
+
+@router.get("/predictions/my/stats")
+async def get_my_stats(request: Request, db: Session = Depends(get_db)):
+    """Aggregated cabinet stats: accuracy, streaks, XP, last-20 spark, categories."""
+    user_data = await get_current_user(request)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Не авторизован",
+        )
+    try:
+        svc = UserStatsService(db)
+        return svc.get_user_stats(user_data.user_id)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Не удалось собрать статистику: {e}",
+        )
+
+
+@router.get("/challenges/my")
+async def get_my_challenges(request: Request, db: Session = Depends(get_db)):
+    """Challenge progress derived from saved predictions."""
+    user_data = await get_current_user(request)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Не авторизован",
+        )
+    try:
+        svc = UserStatsService(db)
+        stats = svc.get_user_stats(user_data.user_id)
+        return evaluate_challenges(stats)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Не удалось вычислить челленджи: {e}",
+        )
+
+
+@router.get("/leaderboard")
+async def get_leaderboard(
+        request: Request,
+        limit: int = 20,
+        db: Session = Depends(get_db),
+):
+    """Top users ranked by XP (open — anyone can view)."""
+    try:
+        svc = UserStatsService(db)
+        board = svc.get_leaderboard(limit=limit)
+        try:
+            user_data = await get_current_user(request)
+            if user_data:
+                for row in board:
+                    if row["userId"] == user_data.user_id:
+                        row["isYou"] = True
+        except Exception:
+            pass
+        return board
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Не удалось собрать рейтинг: {e}",
+        )

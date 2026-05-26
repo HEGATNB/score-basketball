@@ -120,6 +120,31 @@ async def get_player_by_id(
             detail=f"Error getting player: {str(e)}"
         )
 
+# Карьерная разбивка по сезонам — для PlayerDetailModal на фронте
+@router.get("/{player_id}/seasons")
+async def get_player_seasons(
+    player_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        player_service = PlayerService(db)
+        data = player_service.get_player_seasons_breakdown(player_id)
+        if data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Player {player_id} not found",
+            )
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_player_seasons: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error getting player seasons",
+        )
+
+
 # Получение команды по сокращению (аббривеатуре)
 @router.get("/team/{team_abbrev}", response_model=List[schemas.PlayerResponse])
 async def get_players_by_team(
