@@ -6,11 +6,51 @@ from typing import List, Optional, Dict
 
 from repositories.team_repository import TeamRepository
 
+EASTERN_TEAMS = {
+    "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DET", "IND", "MIA", "MIL",
+    "NYK", "ORL", "PHI", "TOR", "WAS",
+}
+
+WESTERN_TEAMS = {
+    "DAL", "DEN", "GSW", "HOU", "LAC", "LAL", "MEM", "MIN", "NOP", "OKC",
+    "PHX", "POR", "SAC", "SAS", "UTA",
+}
+
+TEAM_DIVISIONS = {
+    "ATL": "Southeast", "CHA": "Southeast", "MIA": "Southeast", "ORL": "Southeast", "WAS": "Southeast",
+    "BOS": "Atlantic", "BKN": "Atlantic", "NYK": "Atlantic", "PHI": "Atlantic", "TOR": "Atlantic",
+    "CHI": "Central", "CLE": "Central", "DET": "Central", "IND": "Central", "MIL": "Central",
+    "DAL": "Southwest", "HOU": "Southwest", "MEM": "Southwest", "NOP": "Southwest", "SAS": "Southwest",
+    "DEN": "Northwest", "MIN": "Northwest", "OKC": "Northwest", "POR": "Northwest", "UTA": "Northwest",
+    "GSW": "Pacific", "LAC": "Pacific", "LAL": "Pacific", "PHX": "Pacific", "SAC": "Pacific",
+}
+
 
 class TeamService:
     def __init__(self, db: Session):
         self.db = db
         self.team_repo = TeamRepository(db)
+
+    def _conference_for_abbrev(self, abbrev: str) -> Optional[str]:
+        if abbrev in EASTERN_TEAMS:
+            return "Eastern"
+        if abbrev in WESTERN_TEAMS:
+            return "Western"
+        return None
+
+    def _decorate_team(self, team: Dict) -> Dict:
+        abbrev = (team.get('abbrev') or '').upper()
+        conference = team.get('conference') or team.get('stats_conference') or team.get('team_conference')
+        if conference in ("East", "Eastern Conference"):
+            conference = "Eastern"
+        elif conference in ("West", "Western Conference"):
+            conference = "Western"
+        conference = conference or self._conference_for_abbrev(abbrev)
+
+        team['conference'] = conference
+        team['conference_id'] = 1 if conference == 'Eastern' else 2 if conference == 'Western' else 0
+        team['division'] = team.get('division') or TEAM_DIVISIONS.get(abbrev)
+        return team
 
     def get_all_teams(self, skip: int = 0, limit: int = 100):
         try:
@@ -18,15 +58,7 @@ class TeamService:
 
             # Преобразование данных для совместимости с фронтендом
             for team in teams:
-                conference = team.get('stats_conference') or team.get('team_conference')
-                conference_id = 0
-                if conference == 'Eastern':
-                    conference_id = 1
-                elif conference == 'Western':
-                    conference_id = 2
-
-                team['conference_id'] = conference_id
-                team['conference'] = conference
+                self._decorate_team(team)
 
                 # Преобразуем None в 0 для числовых полей
                 team['points_per_game'] = float(team.get('points_per_game') or 0)
@@ -46,7 +78,8 @@ class TeamService:
             return []
 
     def get_team_by_id(self, team_id: int) -> Optional[Dict]:
-        return self.team_repo.get_by_id(team_id)
+        team = self.team_repo.get_by_id(team_id)
+        return self._decorate_team(team) if team else None
 
     def get_team_by_name(self, name: str) -> Optional[Dict]:
         return self.team_repo.get_by_name(name)

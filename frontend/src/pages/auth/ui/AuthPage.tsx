@@ -1,55 +1,19 @@
-// src/pages/auth/ui/AuthPage.tsx
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, BarChart3, Eye, EyeOff, History, Lock, Mail, ShieldCheck, User2 } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Trophy, User2, Zap } from 'lucide-react';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { useLanguage } from '@/app/providers/LanguageProvider';
-import { GlowingCard } from '@/shared/ui/GlowingCard';
 
-const DEMO_ACCOUNTS = [
-  {
-    role: 'Admin',
-    email: 'admin@sys.com',
-    password: 'admin',
-    noteKey: 'auth.adminNote',
-  },
-  {
-    role: 'Operator',
-    email: 'operator@sys.com',
-    password: 'operator',
-    noteKey: 'auth.operatorNote',
-  },
-  {
-    role: 'User',
-    email: 'user@sys.com',
-    password: 'user',
-    noteKey: 'auth.userNote',
-  },
-];
-
-const ACCESS_FEATURES = [
-  {
-    icon: History,
-    titleKey: 'feature.history',
-    descriptionKey: 'feature.historyDesc',
-  },
-  {
-    icon: BarChart3,
-    titleKey: 'feature.workspace',
-    descriptionKey: 'feature.workspaceDesc',
-  },
-  {
-    icon: ShieldCheck,
-    titleKey: 'feature.auth',
-    descriptionKey: 'feature.authDesc',
-  },
-];
+// Background image for the auth screen. To use a custom image instead of the
+// default, drop a file into `frontend/public/auth-bg.jpg` and change this to
+// `/auth-bg.jpg`.
+//
+// Current default: Unsplash basketball hoop photo (verified, atmospheric).
+const BG_IMG =
+  'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=1600&q=80&auto=format&fit=crop';
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const { login, register } = useAuth();
-  const { t } = useLanguage();
   const [isLogin, setIsLogin] = useState(true);
   const [identifier, setIdentifier] = useState('');
   const [email, setEmail] = useState('');
@@ -59,235 +23,321 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const applyDemoAccount = (account: (typeof DEMO_ACCOUNTS)[number]) => {
-    setIsLogin(true);
-    setIdentifier(account.email);
-    setPassword(account.password);
-    setEmail('');
-    setName('');
-    setError('');
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
       if (isLogin) {
-        const success = await login(identifier, password);
-        if (!success) {
-          setError(t('auth.invalidCredentials'));
+        const ok = await login(identifier, password);
+        if (!ok) {
+          setError('Неверный логин или пароль.');
           return;
         }
       } else {
-        const success = await register({ email, password, name });
-        if (!success) {
-          setError(t('auth.registrationFailed'));
+        const ok = await register({ email, password, name });
+        if (!ok) {
+          setError('Не удалось зарегистрироваться.');
           return;
         }
       }
-
       navigate('/');
-    } catch (submissionError: any) {
-      setError(submissionError.message || t('auth.authFailed'));
+    } catch (err: any) {
+      setError(err?.message || 'Ошибка авторизации.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-      <GlowingCard glowColor="blue" className="p-8 md:p-10">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="data-chip">{t('auth.accessLayer')}</span>
-          <span className="data-chip">{t('auth.nodeApi')}</span>
+    <div className="relative isolate min-h-screen overflow-hidden" style={{ background: '#06070a' }}>
+      {/* Layer 1: background photo */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: `url(${BG_IMG})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 35%',
+          filter: 'saturate(1.0) contrast(1.10) brightness(0.62)',
+          transform: 'scale(1.03)',
+        }}
+      />
+      {/* Layer 2: gradient overlay — left side opaque so headline reads, right side fades to reveal photo */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0"
+        style={{
+          background:
+            'linear-gradient(100deg, rgba(6,7,10,0.94) 0%, rgba(6,7,10,0.74) 32%, rgba(6,7,10,0.42) 58%, rgba(6,7,10,0.80) 100%), radial-gradient(ellipse 60% 60% at 12% 22%, rgba(255,90,31,0.20), transparent 60%)',
+        }}
+      />
+      {/* Layer 3: subtle scanlines for cinematic texture */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 4px)',
+          mixBlendMode: 'overlay',
+        }}
+      />
+      {/* Layer 4: vignette */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 110% 85% at 50% 50%, transparent 35%, rgba(0,0,0,0.50) 100%)',
+        }}
+      />
+
+      <div className="container-x relative z-10 flex min-h-screen flex-col pb-16 pt-10 lg:pb-20 lg:pt-14">
+        {/* ===== HEADLINE — full width ===== */}
+        <div className="mb-10 lg:mb-14">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="tag tag-hot">
+              <ShieldCheck className="h-3 w-3" />
+              {isLogin ? 'ВХОД В КАБИНЕТ' : 'НОВЫЙ АККАУНТ'}
+            </span>
+            <span className="tag">SEASON 2025/26</span>
+            <span className="tag tag-gold">
+              <Trophy className="h-3 w-3" />
+              MODEL ACCESS
+            </span>
+          </div>
+
+          <h1
+            className="display-h"
+            style={{ fontSize: 'clamp(56px, 9vw, 144px)', lineHeight: 0.86 }}
+          >
+            {isLogin ? (
+              <>
+                <span className="stroked-text">КАБИНЕТ</span>
+                <br />
+                <em>АНАЛИТИКА</em> ОТКРЫТ.
+              </>
+            ) : (
+              <>
+                <span className="stroked-text">СОЗДАЙ</span>
+                <br />
+                <em>ПРОФИЛЬ</em> АНАЛИТИКА.
+              </>
+            )}
+          </h1>
         </div>
 
-        <div className="mt-6 flex items-start gap-4">
-          <div className="brand-mark-cool flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">{t('auth.secureWorkspace')}</p>
-            <h1 className="mt-2 max-w-xl text-4xl font-semibold leading-tight text-white">
-              {t('auth.title')}
-            </h1>
-          </div>
-        </div>
+        {/* ===== MAIN GRID: Pitch (left, 2-col features) + Form (right) ===== */}
+        <div className="grid flex-1 items-start gap-8 lg:grid-cols-[1.15fr_minmax(0,440px)] lg:gap-14">
+          {/* ===== LEFT: Pitch with feature list ===== */}
+          <div className="flex flex-col gap-7">
+            <p className="max-w-[520px] text-[16px] leading-relaxed text-[var(--text-2)]">
+              {isLogin
+                ? 'Войди и продолжи работу с историей прогнозов, точностью модели и персональной статистикой.'
+                : 'Создай профиль, чтобы сохранять прогнозы, отслеживать точность и видеть динамику решений по матчам.'}
+            </p>
 
-        <p className="mt-6 text-base leading-7 text-slate-300">
-          {t('auth.subtitle')}
-        </p>
-
-        <div className="mt-8 grid gap-3 md:grid-cols-3">
-          {ACCESS_FEATURES.map((feature) => (
-            <div key={feature.titleKey} className="surface-muted">
-              <feature.icon className="h-5 w-5 text-slate-200" />
-              <p className="mt-3 text-base font-semibold text-white">{t(feature.titleKey)}</p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{t(feature.descriptionKey)}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{t('auth.demoAccounts')}</p>
-              <p className="mt-2 text-sm text-slate-400">{t('auth.clickToFill')}</p>
-            </div>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t('auth.readyProfiles')}</p>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {DEMO_ACCOUNTS.map((account) => (
-              <button
-                key={account.email}
-                type="button"
-                onClick={() => applyDemoAccount(account)}
-                className="flex w-full items-center justify-between gap-4 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4 text-left transition hover:border-white/16 hover:bg-white/[0.05]"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-3">
-                    <span className="status-pill">{account.role}</span>
-                    <span className="text-sm text-slate-500">{account.email}</span>
+            {/* Vertical feature list — replaces tiny chips */}
+            <div className="flex flex-col gap-3 max-w-[560px]">
+              {[
+                {
+                  icon: <Trophy className="h-5 w-5" />,
+                  lbl: 'Статус профиля',
+                  desc: 'Каждый прогноз сохраняется в истории и влияет на точность, статус и прогресс.',
+                },
+                {
+                  icon: <Zap className="h-5 w-5" />,
+                  lbl: 'ИИ-аналитика',
+                  desc: 'Модель разбирает форму, темп, домашнюю площадку и травмы — за тебя.',
+                },
+                {
+                  icon: <ShieldCheck className="h-5 w-5" />,
+                  lbl: 'История прогнозов',
+                  desc: 'Все прогнозы сохранены. Видишь точность, серии решений и зоны для улучшения.',
+                },
+              ].map((p) => (
+                <div
+                  key={p.lbl}
+                  className="card flex items-start gap-4 p-5"
+                  style={{ background: 'rgba(20,20,28,0.78)', backdropFilter: 'blur(14px)' }}
+                >
+                  <div
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
+                    style={{ background: 'rgba(255,90,31,0.14)', color: 'var(--accent)' }}
+                  >
+                    {p.icon}
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">{t(account.noteKey)}</p>
+                  <div className="min-w-0">
+                    <div
+                      className="font-mono text-[11px] uppercase text-[var(--text)]"
+                      style={{ letterSpacing: '0.18em' }}
+                    >
+                      {p.lbl}
+                    </div>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--text-3)]">
+                      {p.desc}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-white">{t('auth.useDemo')}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{account.password}</p>
-                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ===== RIGHT: Form ===== */}
+          <div
+            className="card p-7 sm:p-9"
+            style={{ background: 'rgba(14,14,19,0.85)', backdropFilter: 'blur(20px)' }}
+          >
+          {/* Tabs */}
+          <div className="flex gap-1.5 rounded-pill border border-[var(--line)] bg-[var(--surface-2)] p-1">
+            {([
+              [true, 'Вход'],
+              [false, 'Регистрация'],
+            ] as const).map(([v, label]) => (
+              <button
+                key={String(v)}
+                type="button"
+                onClick={() => {
+                  setIsLogin(v);
+                  setError('');
+                }}
+                className={`flex-1 rounded-pill px-4 py-2 text-xs font-semibold transition ${
+                  isLogin === v
+                    ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                    : 'text-[var(--text-2)] hover:text-[var(--text)]'
+                }`}
+              >
+                {label}
               </button>
             ))}
           </div>
-        </div>
-      </GlowingCard>
 
-      <GlowingCard glowColor="orange" className="p-8 md:p-10">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-[rgba(236,216,171,0.72)]">{t('auth.workspaceGate')}</p>
-            <h2 className="mt-2 font-spacegrotesk text-4xl font-bold text-white">
-              {isLogin ? t('auth.signInContinue') : t('auth.createAccount')}
-            </h2>
-            <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-              {isLogin
-                ? t('auth.signInHint')
-                : t('auth.registerHint')}
-            </p>
-          </div>
-
-          <div className="segmented-bar">
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin(true);
-                setError('');
-              }}
-              className={`segmented-item ${isLogin ? 'segmented-item-active' : ''}`}
-            >
-              {t('auth.signIn')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin(false);
-                setError('');
-              }}
-              className={`segmented-item ${!isLogin ? 'segmented-item-active' : ''}`}
-            >
-              {t('auth.register')}
-            </button>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-          <AnimatePresence initial={false}>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {!isLogin && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-2"
-              >
-                <label className="text-sm font-medium text-slate-300">{t('auth.fullName')}</label>
+              <div className="space-y-1.5">
+                <label
+                  className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                  style={{ letterSpacing: '0.22em' }}
+                >
+                  Имя
+                </label>
                 <div className="relative">
-                  <User2 className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+                  <User2
+                    className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
+                    style={{ color: 'var(--text-3)' }}
+                  />
                   <input
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      required={!isLogin}
-                      autoComplete="name"
-                      placeholder="Alexey Analyst"
-                      className="field-shell py-3 pl-4 pr-4"
-                      style={{ textIndent: '26px' }}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    autoComplete="name"
+                    placeholder="Как тебя зовут"
+                    className="field pl-11"
                   />
                 </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">{isLogin ? t('auth.emailOrLogin') : t('auth.email')}</label>
-            <div className="relative">
-              <Mail className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
-              <input
+            <div className="space-y-1.5">
+              <label
+                className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                style={{ letterSpacing: '0.22em' }}
+              >
+                {isLogin ? 'Email или логин' : 'Email'}
+              </label>
+              <div className="relative">
+                <Mail
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
+                  style={{ color: 'var(--text-3)' }}
+                />
+                <input
                   type={isLogin ? 'text' : 'email'}
                   value={isLogin ? identifier : email}
-                  onChange={(event) => (isLogin ? setIdentifier(event.target.value) : setEmail(event.target.value))}
+                  onChange={(e) =>
+                    isLogin ? setIdentifier(e.target.value) : setEmail(e.target.value)
+                  }
                   required
                   autoComplete={isLogin ? 'username' : 'email'}
-                  placeholder={isLogin ? 'admin@sys.com or admin' : 'alex@example.com'}
-                  className="field-shell py-3 pl-4 pr-4"
-                  style={{ textIndent: '26px' }}
-              />
+                  placeholder={isLogin ? 'you@example.com' : 'you@example.com'}
+                  className="field pl-11"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">{t('auth.password')}</label>
-            <div className="relative">
-              <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
-              <input
+            <div className="space-y-1.5">
+              <label
+                className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                style={{ letterSpacing: '0.22em' }}
+              >
+                Пароль
+              </label>
+              <div className="relative">
+                <Lock
+                  className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
+                  style={{ color: 'var(--text-3)' }}
+                />
+                <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete={isLogin ? 'current-password' : 'new-password'}
-                  placeholder={isLogin ? t('auth.enterPassword') : t('auth.createPassword')}
-                  className="field-shell py-3 pl-4 pr-12"
-                  style={{ textIndent: '26px' }}
-              />
+                  placeholder={isLogin ? '••••••••' : 'Минимум 6 символов'}
+                  className="field pl-11 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 transition hover:text-[var(--text)]"
+                  style={{ color: 'var(--text-3)' }}
+                  aria-label="Показать пароль"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
 
+            {error && (
+              <div
+                className="rounded-md border p-3 text-[13px]"
+                style={{
+                  borderColor: 'rgba(255,56,88,0.3)',
+                  background: 'rgba(255,56,88,0.08)',
+                  color: 'var(--danger)',
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn btn-primary w-full justify-center"
+              style={{ padding: '14px 24px', fontSize: 14 }}
+            >
+              {loading ? 'Загружаем…' : isLogin ? 'Войти' : 'Создать аккаунт'}
+              {!loading && <ArrowRight className="h-4 w-4" />}
+            </button>
+
+            <p className="text-center text-[12px] text-[var(--text-3)]">
+              {isLogin ? 'Нет аккаунта? ' : 'Уже есть аккаунт? '}
               <button
                 type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-white"
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError('');
+                }}
+                className="font-semibold transition hover:underline"
+                style={{ color: 'var(--accent)' }}
               >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                {isLogin ? 'Регистрация' : 'Вход'}
               </button>
-            </div>
-          </div>
-
-          {error && <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {loading ? t('auth.processing') : isLogin ? t('auth.enterWorkspace') : t('auth.createAndContinue')}
-            {!loading && <ArrowRight className="h-4 w-4" />}
-          </button>
-
-          <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-4 text-sm leading-6 text-slate-400">
-            {isLogin
-              ? t('auth.demoHint')
-              : t('auth.newAccountHint')}
-          </div>
-        </form>
-      </GlowingCard>
+            </p>
+          </form>
+        </div>
+        </div>
+      </div>
     </div>
   );
 }

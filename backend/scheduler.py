@@ -10,7 +10,6 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.update_data import update_db_with_new_games
-from scripts.train_model import train_model
 from database import SessionLocal
 from services.audit_service import AuditService
 from services.model_metrics_service import ModelMetricsService
@@ -106,6 +105,7 @@ class DataUpdater:
         try:
             import time
             start_time = time.time()
+            from scripts.train_model import train_model
 
             db = SessionLocal()
             try:

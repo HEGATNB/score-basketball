@@ -7,18 +7,21 @@ import pandas as pd
 import pickle
 import os
 import asyncio
-from tensorflow.keras.models import load_model
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
-from controllers import auth, teams, matches, predictions, players
+from controllers import auth, teams, matches, predictions, players, home, live
 from scripts.update_data import update_db_with_new_games
-from scripts.train_model import train_model
 from database import engine, Base, get_db
 from sqlalchemy.orm import Session
 from scheduler import data_updater
 from services.model_metrics_service import ModelMetricsService
 import atexit
+
+try:
+    from tensorflow.keras.models import load_model
+except Exception:
+    load_model = None
 
 app = FastAPI(
     title="HoopsAI API",
@@ -44,11 +47,13 @@ app.add_middleware(
 # Переменные для нейросети
 
 model = None
-scaler = None
+scaler = None              # legacy single-scaler artifact (older trainer)
+scaler_home = None         # current trainer: separate scaler for the home features
+scaler_away = None         # current trainer: separate scaler for the away features
 team_emas = {}
 teams_df = None
 STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
-MODEL_DIR = "./models"
+MODEL_DIR = os.getenv("MODEL_DIR", "./models")
 
 
 
@@ -66,26 +71,49 @@ class NeuralPredictionResponse(BaseModel):
 # Загрузка нейросети
 @app.on_event("startup")
 def load_artifacts():
-    global model, scaler, team_emas, teams_df
+    global model, scaler, scaler_home, scaler_away, team_emas, teams_df
     model_path = os.path.join(MODEL_DIR, "model.h5")
     scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
+    scaler_home_path = os.path.join(MODEL_DIR, "scaler_home.pkl")
+    scaler_away_path = os.path.join(MODEL_DIR, "scaler_away.pkl")
     emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
     teams_path = os.path.join(MODEL_DIR, "teams.csv")
 
-    if os.path.exists(model_path):
-        try:
-            model = load_model(model_path)
+    if not os.path.exists(model_path):
+        print("Neural network not found. Run train_model.py first.")
+        return
+    if load_model is None:
+        print("TensorFlow is not installed. Neural prediction artifacts were not loaded.")
+        return
+
+    try:
+        model = load_model(model_path)
+
+        # Prefer the per-side scaler pair produced by the current trainer.
+        # Fall back to the legacy single scaler.pkl for older artifacts.
+        if os.path.exists(scaler_home_path) and os.path.exists(scaler_away_path):
+            with open(scaler_home_path, "rb") as f:
+                scaler_home = pickle.load(f)
+            with open(scaler_away_path, "rb") as f:
+                scaler_away = pickle.load(f)
+            print("Loaded split scalers (scaler_home + scaler_away)")
+        elif os.path.exists(scaler_path):
             with open(scaler_path, "rb") as f:
                 scaler = pickle.load(f)
-            with open(emas_path, "rb") as f:
-                team_emas = pickle.load(f)
-            if os.path.exists(teams_path):
-                teams_df = pd.read_csv(teams_path)
-            print("Neural network loaded successfully")
-        except Exception as e:
-            print(f"Error loading neural network: {e}")
-    else:
-        print("Neural network not found. Run train_model.py first.")
+            print("Loaded legacy single scaler.pkl")
+        else:
+            print("WARNING: No scaler artifact found alongside model.h5")
+            return
+
+        with open(emas_path, "rb") as f:
+            team_emas = pickle.load(f)
+
+        if os.path.exists(teams_path):
+            teams_df = pd.read_csv(teams_path)
+
+        print("Neural network loaded successfully")
+    except Exception as e:
+        print(f"Error loading neural network: {e}")
 
 
 @app.on_event("startup")
@@ -119,7 +147,7 @@ def get_neural_teams():
 @app.post("/api/neural/predict")
 @app.post("/neural/predict")
 def neural_predict(request: NeuralPredictionRequest):
-    if model is None or scaler is None or teams_df is None:
+    if model is None or teams_df is None or (scaler is None and scaler_home is None):
         raise HTTPException(status_code=503, detail="Neural network not loaded")
 
     home_row = teams_df[teams_df['team_abbrev'] == request.home_team]
@@ -137,15 +165,18 @@ def neural_predict(request: NeuralPredictionRequest):
     home_ema = team_emas[home_id]
     away_ema = team_emas[away_id]
 
-    feat = []
-    for stat in STATS:
-        feat.append(home_ema[stat])
-    for stat in STATS:
-        feat.append(away_ema[stat])
+    home_feat = np.array([home_ema[s] for s in STATS], dtype=np.float32).reshape(1, -1)
+    away_feat = np.array([away_ema[s] for s in STATS], dtype=np.float32).reshape(1, -1)
 
-    feat_array = np.array(feat).reshape(1, -1)
-    feat_scaled = scaler.transform(feat_array)
-    prob = model.predict(feat_scaled)[0][0]
+    if scaler_home is not None and scaler_away is not None:
+        # Match the per-side scaling used at training time
+        home_scaled = scaler_home.transform(home_feat)
+        away_scaled = scaler_away.transform(away_feat)
+        feat_scaled = np.hstack([home_scaled, away_scaled])
+    else:
+        feat_scaled = scaler.transform(np.hstack([home_feat, away_feat]))
+
+    prob = model.predict(feat_scaled, verbose=0)[0][0]
 
     return NeuralPredictionResponse(
         home_team=request.home_team,
@@ -163,6 +194,8 @@ async def neural_retrain(background_tasks: BackgroundTasks):
 
 async def retrain_task():
     try:
+        from scripts.train_model import train_model
+
         loop = asyncio.get_event_loop()
         print("Starting data update...")
         await loop.run_in_executor(None, update_db_with_new_games, None, 7)
@@ -263,8 +296,9 @@ async def health_check():
     db_status = "unknown"
     try:
         from database import SessionLocal
+        from sqlalchemy import text
         db = SessionLocal()
-        db.execute("SELECT 1").scalar()
+        db.execute(text("SELECT 1")).scalar()
         db.close()
         db_status = "connected"
     except Exception as e:
@@ -286,11 +320,12 @@ async def check_database():
         from database import SessionLocal
         db = SessionLocal()
 
-        tables = db.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
+        from sqlalchemy import text
+        tables = db.execute(text("""
+            SELECT table_name
+            FROM information_schema.tables
             WHERE table_schema = 'public'
-        """).fetchall()
+        """)).fetchall()
 
         table_list = [t[0] for t in tables]
 
@@ -298,13 +333,13 @@ async def check_database():
         sample_games = []
 
         if 'game' in table_list:
-            game_count = db.execute("SELECT COUNT(*) as count FROM game").scalar()
+            game_count = db.execute(text("SELECT COUNT(*) as count FROM game")).scalar()
 
-            games = db.execute("""
-                SELECT game_id, team_name_home, team_name_away, game_date 
-                FROM game 
+            games = db.execute(text("""
+                SELECT game_id, team_name_home, team_name_away, game_date
+                FROM game
                 LIMIT 3
-            """).fetchall()
+            """)).fetchall()
 
             for row in games:
                 sample_games.append({
@@ -339,6 +374,8 @@ app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
 app.include_router(matches.router, prefix="/api/matches", tags=["matches"])
 app.include_router(predictions.router, prefix="/api", tags=["predictions"])
 app.include_router(players.router, prefix="/api/players", tags=["players"])
+app.include_router(home.router, prefix="/api/home", tags=["home"])
+app.include_router(live.router, prefix="/api/live", tags=["live"])
 
 # РОУТЫ БЕЗ API
 app.include_router(auth.router, prefix="/auth", tags=["auth"])

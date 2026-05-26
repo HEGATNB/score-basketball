@@ -1,27 +1,32 @@
 import { motion } from 'framer-motion';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  BarChart, Bar,
+  LineChart, Line,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts';
-import { GlowingCard } from './GlowingCard';
+import { Glass } from './Glass';
 
-const COLORS = ['#e41c38', '#1d428a', '#728b74', '#ff4d29', '#8d6b5d', '#56786f'];
+// Premium chart palette
+const COLORS = ['#E76F2E', '#D4AF37', '#7DD3FC', '#86EFAC', '#C8581C', '#8C8579'];
+
+const tooltipStyle = {
+  backgroundColor: 'rgba(8, 9, 12, 0.92)',
+  border: '1px solid rgba(245, 239, 226, 0.12)',
+  borderRadius: 10,
+  boxShadow: '0 24px 60px -12px rgba(0,0,0,0.6)',
+  padding: '12px 14px',
+  fontFamily: 'Geist, system-ui, sans-serif',
+  fontSize: 12,
+  color: '#F5EFE2',
+};
+
+const labelStyle = { color: '#F5EFE2', fontWeight: 500 };
+const tooltipItemStyle = { color: '#F5EFE2', fontWeight: 500 };
+const tooltipWrapperStyle = { outline: 'none' };
+const axisStyle = { fill: '#8C8579', fontSize: 11, fontFamily: 'JetBrains Mono, monospace' };
 
 interface ChartProps {
   title?: string;
@@ -34,41 +39,41 @@ export const LineChartComponent = ({
   data,
   dataKey,
   xAxisKey,
-  color = '#e41c38',
+  color = '#E76F2E',
   className = '',
-}: ChartProps & {
-  dataKey: string;
-  xAxisKey: string;
-  color?: string;
-}) => {
+}: ChartProps & { dataKey: string; xAxisKey: string; color?: string }) => {
   return (
-    <GlowingCard className={`p-6 ${className}`}>
-      {title && <h3 className="mb-4 text-lg font-bold text-white">{title}</h3>}
+    <Glass rounded="3xl" className={`p-6 ${className}`}>
+      {title && (
+        <div className="mb-5">
+          <p className="font-sans-display text-[10px] uppercase tracking-[0.32em] text-cream-400">Динамика</p>
+          <h3 className="display mt-1 text-2xl text-cream-50">{title}</h3>
+        </div>
+      )}
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey={xAxisKey} stroke="#94a3b8" />
-            <YAxis stroke="#94a3b8" />
+          <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(245,239,226,0.06)" />
+            <XAxis dataKey={xAxisKey} tick={axisStyle} stroke="rgba(245,239,226,0.16)" />
+            <YAxis tick={axisStyle} stroke="rgba(245,239,226,0.16)" />
             <Tooltip
-              contentStyle={{
-                backgroundColor: '#161d26',
-                border: '1px solid rgba(244,233,215,0.1)',
-                borderRadius: 16,
-              }}
-              labelStyle={{ color: '#f5efe4' }}
+              contentStyle={tooltipStyle}
+              labelStyle={labelStyle}
+              itemStyle={tooltipItemStyle}
+              wrapperStyle={tooltipWrapperStyle}
             />
             <Line
               type="monotone"
               dataKey={dataKey}
               stroke={color}
-              strokeWidth={3}
-              dot={{ fill: color }}
+              strokeWidth={2.5}
+              dot={{ fill: color, r: 4 }}
+              activeDot={{ r: 6, fill: color, stroke: '#FBF7EE', strokeWidth: 2 }}
             />
           </LineChart>
         </ResponsiveContainer>
       </div>
-    </GlowingCard>
+    </Glass>
   );
 };
 
@@ -78,32 +83,39 @@ export const BarChartComponent = ({
   dataKey,
   xAxisKey,
   className = '',
-}: ChartProps & {
-  dataKey: string;
-  xAxisKey: string;
-}) => {
+}: ChartProps & { dataKey: string; xAxisKey: string }) => {
   return (
-    <GlowingCard className={`p-6 ${className}`}>
-      {title && <h3 className="mb-4 text-lg font-bold text-white">{title}</h3>}
+    <Glass rounded="3xl" className={`p-6 ${className}`}>
+      {title && (
+        <div className="mb-5">
+          <p className="font-sans-display text-[10px] uppercase tracking-[0.32em] text-cream-400">Сравнение</p>
+          <h3 className="display mt-1 text-2xl text-cream-50">{title}</h3>
+        </div>
+      )}
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey={xAxisKey} stroke="#94a3b8" />
-            <YAxis stroke="#94a3b8" />
+          <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(245,239,226,0.06)" />
+            <XAxis dataKey={xAxisKey} tick={axisStyle} stroke="rgba(245,239,226,0.16)" />
+            <YAxis tick={axisStyle} stroke="rgba(245,239,226,0.16)" />
             <Tooltip
-              contentStyle={{
-                backgroundColor: '#161d26',
-                border: '1px solid rgba(244,233,215,0.1)',
-                borderRadius: 16,
-              }}
-              labelStyle={{ color: '#f5efe4' }}
+              contentStyle={tooltipStyle}
+              labelStyle={labelStyle}
+              itemStyle={tooltipItemStyle}
+              wrapperStyle={tooltipWrapperStyle}
+              cursor={{ fill: 'rgba(231, 111, 46, 0.08)' }}
             />
-            <Bar dataKey={dataKey} fill="#e41c38" radius={[4, 4, 0, 0]} />
+            <defs>
+              <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#F08338" stopOpacity={1} />
+                <stop offset="100%" stopColor="#C8581C" stopOpacity={0.85} />
+              </linearGradient>
+            </defs>
+            <Bar dataKey={dataKey} fill="url(#barGradient)" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </GlowingCard>
+    </Glass>
   );
 };
 
@@ -113,73 +125,60 @@ export const PieChartComponent = ({
   nameKey,
   valueKey,
   className = '',
-}: ChartProps & {
-  nameKey: string;
-  valueKey: string;
-}) => {
+}: ChartProps & { nameKey: string; valueKey: string }) => {
   return (
-    <GlowingCard className={`p-6 ${className}`}>
-      {title && <h3 className="mb-4 text-lg font-bold text-white">{title}</h3>}
-      <div className="space-y-6">
-        <div className="mx-auto h-64 w-full max-w-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                label={false}
-                labelLine={false}
-                outerRadius={84}
-                dataKey={valueKey}
-                paddingAngle={2}
-              >
-                {data.map((_entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#161d26',
-                  border: '1px solid rgba(244,233,215,0.1)',
-                  borderRadius: 16,
-                }}
-                itemStyle={{ color: '#f5efe4' }}
-                formatter={(value: number | string, _name: string, entry: any) => [
-                  `${value}%`,
-                  entry?.payload?.[nameKey] || '',
-                ]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+    <Glass rounded="3xl" className={`p-6 ${className}`}>
+      {title && (
+        <div className="mb-5">
+          <p className="font-sans-display text-[10px] uppercase tracking-[0.32em] text-cream-400">Распределение</p>
+          <h3 className="display mt-1 text-2xl text-cream-50">{title}</h3>
         </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          {data.map((entry, index) => (
-            <div
-              key={`${entry[nameKey]}-${index}`}
-              className="surface-muted grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-4 py-3"
+      )}
+      <div className="h-64 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={(entry: any) => `${entry[valueKey]}%`}
+              outerRadius={85}
+              innerRadius={45}
+              fill="#E76F2E"
+              dataKey={valueKey}
+              stroke="rgba(8,9,12,0.9)"
+              strokeWidth={2}
             >
-              <span
-                className="mt-1 h-3 w-3 shrink-0 rounded-full"
-                style={{ backgroundColor: COLORS[index % COLORS.length] }}
-              />
-              <span className="min-w-0 text-sm font-medium leading-5 text-slate-200">
-                {entry[nameKey]}
-              </span>
-              <span className="shrink-0 text-sm font-semibold tabular-nums text-white">
-                {entry[valueKey]}%
-              </span>
-              <span />
-              <span className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                model weight
-              </span>
-              <span />
-            </div>
-          ))}
-        </div>
+              {data.map((_entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={tooltipStyle}
+              labelStyle={labelStyle}
+              itemStyle={tooltipItemStyle}
+              wrapperStyle={tooltipWrapperStyle}
+            />
+          </PieChart>
+        </ResponsiveContainer>
       </div>
-    </GlowingCard>
+      {/* Custom legend */}
+      <div className="mt-4 grid gap-1.5 text-xs">
+        {data.slice(0, 8).map((entry, idx) => (
+          <div key={idx} className="flex items-center justify-between font-sans-display text-cream-400">
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: COLORS[idx % COLORS.length] }}
+              />
+              {entry[nameKey]}
+            </span>
+            <span className="font-mono tab-num text-cream-200">{entry[valueKey]}%</span>
+          </div>
+        ))}
+      </div>
+    </Glass>
   );
 };
 
@@ -188,18 +187,21 @@ export const RadarChartComponent = ({
   data,
   dataKeys,
   className = '',
-}: ChartProps & {
-  dataKeys: string[];
-}) => {
+}: ChartProps & { dataKeys: string[] }) => {
   return (
-    <GlowingCard className={`p-6 ${className}`}>
-      {title && <h3 className="mb-4 text-lg font-bold text-white">{title}</h3>}
+    <Glass rounded="3xl" className={`p-6 ${className}`}>
+      {title && (
+        <div className="mb-5">
+          <p className="font-sans-display text-[10px] uppercase tracking-[0.32em] text-cream-400">Профиль</p>
+          <h3 className="display mt-1 text-2xl text-cream-50">{title}</h3>
+        </div>
+      )}
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
-            <PolarGrid stroke="#334155" />
-            <PolarAngleAxis dataKey="metric" stroke="#94a3b8" />
-            <PolarRadiusAxis stroke="#334155" />
+            <PolarGrid stroke="rgba(245,239,226,0.08)" />
+            <PolarAngleAxis dataKey="metric" tick={axisStyle} stroke="rgba(245,239,226,0.16)" />
+            <PolarRadiusAxis stroke="rgba(245,239,226,0.08)" tick={axisStyle} />
             {dataKeys.map((key, index) => (
               <Radar
                 key={key}
@@ -207,47 +209,49 @@ export const RadarChartComponent = ({
                 dataKey={key}
                 stroke={COLORS[index % COLORS.length]}
                 fill={COLORS[index % COLORS.length]}
-                fillOpacity={0.3}
+                fillOpacity={0.25}
+                strokeWidth={2}
               />
             ))}
-            <Legend />
+            <Legend wrapperStyle={{ fontFamily: 'Geist', color: '#F5EFE2', fontSize: 11 }} />
             <Tooltip
-              contentStyle={{
-                backgroundColor: '#161d26',
-                border: '1px solid rgba(244,233,215,0.1)',
-                borderRadius: 16,
-              }}
+              contentStyle={tooltipStyle}
+              labelStyle={labelStyle}
+              itemStyle={tooltipItemStyle}
+              wrapperStyle={tooltipWrapperStyle}
             />
           </RadarChart>
         </ResponsiveContainer>
       </div>
-    </GlowingCard>
+    </Glass>
   );
 };
 
-export const ProgressBar = ({
-  value,
-  max = 100,
-  color = '#e41c38',
-  label,
-}: {
+interface ProgressBarProps {
   value: number;
   max?: number;
   color?: string;
   label?: string;
-}) => {
-  const percentage = (value / max) * 100;
+}
+
+export const ProgressBar = ({ value, max = 100, color = '#E76F2E', label }: ProgressBarProps) => {
+  const percentage = Math.min(100, (value / max) * 100);
 
   return (
-    <div className="w-full space-y-1">
-      {label && <p className="text-sm text-slate-400">{label}</p>}
-      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+    <div className="space-y-2 w-full">
+      {label && (
+        <div className="flex items-center justify-between">
+          <p className="font-sans-display text-xs text-cream-300">{label}</p>
+          <p className="font-mono text-xs tab-num text-cream-50">{value.toFixed(0)}%</p>
+        </div>
+      )}
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream-100/5">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
-          transition={{ duration: 1, ease: 'easeOut' }}
+          transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
           className="h-full rounded-full"
-          style={{ background: color }}
+          style={{ background: `linear-gradient(90deg, ${color}, rgba(255,255,255,0.2))` }}
         />
       </div>
     </div>

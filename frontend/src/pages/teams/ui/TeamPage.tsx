@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarRange, MapPin, Users } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarRange, MapPin, Trophy, Users } from 'lucide-react';
 import { apiRequest, type Player, type Team } from '@/shared/api/client';
-import { GlowingCard } from '@/shared/ui/GlowingCard';
-import { PlayerCard } from '@/shared/ui/PlayerCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
-import { hexToRgba } from '@/shared/lib/teamBrand';
+import { PlayerCard } from '@/shared/ui/PlayerCard';
+import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 
 export const TeamPage = () => {
   const { teamId } = useParams();
@@ -16,176 +15,253 @@ export const TeamPage = () => {
 
   useEffect(() => {
     if (!teamId) {
-      setError('Team id is missing.');
+      setError('Не указан id команды.');
       setLoading(false);
       return;
     }
     apiRequest<Team>(`/teams/${teamId}`)
-      .then((teamData) => {
-        setTeam(teamData);
-        if (teamData.abbrev) {
-          return apiRequest<Player[]>(`/players/team/${teamData.abbrev}`)
-            .then(setPlayers);
+      .then(async (t) => {
+        setTeam(t);
+        if (t.abbrev) {
+          const list = await apiRequest<Player[]>(`/players/team/${t.abbrev}`);
+          setPlayers(list);
         }
-        return [];
       })
-      .catch((err) => {
-        console.error('Error loading team data:', err);
-        setError('Unable to load this team profile right now.');
-      })
+      .catch(() => setError('Не удалось загрузить команду.'))
       .finally(() => setLoading(false));
   }, [teamId]);
 
   const winRate = useMemo(() => {
-    if (!team) {
-      return 0;
-    }
-
-    const totalGames = team.wins + team.losses;
-    return totalGames > 0 ? (team.wins / totalGames) * 100 : 0;
+    if (!team) return 0;
+    const total = team.wins + team.losses;
+    return total > 0 ? (team.wins / total) * 100 : 0;
   }, [team]);
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b]" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <LoadingSpinner size="md" label="Загружаем команду" />
       </div>
     );
   }
 
   if (!team || error) {
     return (
-      <div className="space-y-6">
-        <Link to="/teams" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 transition hover:text-white">
+      <div className="container-x py-20">
+        <Link to="/teams" className="btn btn-ghost mb-6">
           <ArrowLeft className="h-4 w-4" />
-          Back to teams
+          Все команды
         </Link>
-        <p className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-6 text-rose-100">{error || 'Team not found.'}</p>
+        <div className="card border-[rgba(255,56,88,0.25)] bg-[rgba(255,56,88,0.06)] p-8 text-[var(--danger)]">
+          {error || 'Команда не найдена.'}
+        </div>
       </div>
     );
   }
 
-  const differential = team.avgPointsFor - team.avgPointsAgainst;
-  const tint = hexToRgba(team.brandColor || '#c96a2b', 0.16);
+  const diff = team.avgPointsFor - team.avgPointsAgainst;
+  const displayPlayers = [...players].sort((a, b) => b.points_per_game - a.points_per_game);
 
   return (
-    <div className="space-y-8">
-      <Link to="/teams" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 transition hover:text-white">
-        <ArrowLeft className="h-4 w-4" />
-        Back to team index
-      </Link>
+    <section className="section">
+      <div className="container-x">
+        <Link to="/teams" className="btn btn-ghost mb-8">
+          <ArrowLeft className="h-4 w-4" />
+          Все команды
+        </Link>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_380px]">
-        <GlowingCard glowColor="orange" className="p-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="data-chip">{team.conference?.shortName || team.conference?.name || 'League'}</span>
-            <span className="data-chip">{team.division?.name || 'Division'}</span>
+        <div className="grid items-end gap-10 lg:grid-cols-[1fr_auto]">
+          <div>
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <span className="tag tag-hot">
+                {team.conference?.shortName || team.conference?.name || 'NBA'}
+              </span>
+              <span className="tag">{team.division?.name || 'Дивизион'}</span>
+              {team.championships && team.championships > 0 && (
+                <span className="tag tag-gold">
+                  <Trophy className="h-3 w-3" /> {team.championships} титулов
+                </span>
+              )}
+            </div>
+
+            <div
+              className="font-mono text-[12px] uppercase text-[var(--text-3)]"
+              style={{ letterSpacing: '0.22em' }}
+            >
+              {team.city || team.abbrev}
+            </div>
+            <h1
+              className="display-h mt-3"
+              style={{ fontSize: 'clamp(56px, 8vw, 130px)', lineHeight: 0.88 }}
+            >
+              {team.name}
+            </h1>
           </div>
 
-          <div className="mt-6 flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Team profile</p>
-              <h1 className="mt-3 font-spacegrotesk text-4xl font-bold text-white sm:text-5xl">{team.name}</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-300">
-                Current form, scoring profile and roster rotation for {team.city || team.name}.
-              </p>
-            </div>
+          <TeamMark team={team} size="xl" showGlow className="!h-32 !w-32 !text-5xl" />
+        </div>
 
-            <TeamMark team={team} size="lg" />
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-4">
-            <div className="metric-panel">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Record</p>
-              <p className="mt-3 text-3xl font-semibold text-white">
-                {team.wins}-{team.losses}
-              </p>
+        {/* Stats band */}
+        <div
+          className="mt-12 grid overflow-hidden rounded-lg border border-[var(--line)]"
+          style={{ gap: 1, background: 'var(--line)', gridTemplateColumns: 'repeat(4, 1fr)' }}
+        >
+          <div className="bg-[var(--surface)] p-6">
+            <div
+              className="mb-2 font-mono text-[10px] uppercase text-[var(--text-3)]"
+              style={{ letterSpacing: '0.18em' }}
+            >
+              Запись
             </div>
-            <div className="metric-panel">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Win rate</p>
-              <p className="mt-3 text-3xl font-semibold text-white">{winRate.toFixed(1)}%</p>
+            <div className="font-display text-5xl tab-num">
+              {team.wins}–{team.losses}
             </div>
-            <div className="metric-panel">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Offense</p>
-              <p className="mt-3 text-3xl font-semibold text-white">{team.avgPointsFor.toFixed(1)}</p>
-            </div>
-            <div className="metric-panel">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Defense</p>
-              <p className="mt-3 text-3xl font-semibold text-white">{team.avgPointsAgainst.toFixed(1)}</p>
+            <div className="mt-3 h-1 overflow-hidden rounded-sm bg-[var(--surface-3)]">
+              <div
+                className="h-full"
+                style={{
+                  width: `${Math.max(8, winRate)}%`,
+                  background: 'linear-gradient(90deg, var(--accent), var(--gold))',
+                }}
+              />
             </div>
           </div>
+          <div className="bg-[var(--surface)] p-6">
+            <div
+              className="mb-2 font-mono text-[10px] uppercase text-[var(--text-3)]"
+              style={{ letterSpacing: '0.18em' }}
+            >
+              % побед
+            </div>
+            <div className="font-display text-5xl tab-num">{winRate.toFixed(1)}%</div>
+            <div className="mt-2 text-xs text-[var(--text-3)]">Позиция в лиге</div>
+          </div>
+          <div className="bg-[var(--surface)] p-6">
+            <div
+              className="mb-2 font-mono text-[10px] uppercase text-[var(--text-3)]"
+              style={{ letterSpacing: '0.18em' }}
+            >
+              Атака
+            </div>
+            <div
+              className="font-display text-5xl tab-num"
+              style={{ color: 'var(--accent)' }}
+            >
+              {team.avgPointsFor.toFixed(1)}
+            </div>
+            <div className="mt-2 text-xs text-[var(--text-3)]">Очков за игру</div>
+          </div>
+          <div className="bg-[var(--surface)] p-6">
+            <div
+              className="mb-2 font-mono text-[10px] uppercase text-[var(--text-3)]"
+              style={{ letterSpacing: '0.18em' }}
+            >
+              Net
+            </div>
+            <div
+              className="font-display text-5xl tab-num"
+              style={{ color: diff >= 0 ? 'var(--ok)' : 'var(--danger)' }}
+            >
+              {diff >= 0 ? '+' : ''}
+              {diff.toFixed(1)}
+            </div>
+            <div className="mt-2 text-xs text-[var(--text-3)]">PF − PA</div>
+          </div>
+        </div>
 
-          <div className="surface-muted mt-6" style={{ borderColor: tint }}>
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-slate-400">Net rating proxy</span>
-              <span className={`font-semibold ${differential >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                {differential >= 0 ? '+' : ''}
-                {differential.toFixed(1)}
+        {/* Identity */}
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+          <div className="card p-8">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-md"
+                style={{ background: 'rgba(255,90,31,0.12)', color: 'var(--accent)' }}
+              >
+                <MapPin className="h-4 w-4" />
+              </div>
+              <span
+                className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                style={{ letterSpacing: '0.22em' }}
+              >
+                Домашняя
               </span>
             </div>
-          </div>
-        </GlowingCard>
-
-        <div className="grid gap-6">
-          <GlowingCard glowColor="blue" className="p-6">
-            <div className="flex items-center gap-3">
-              <MapPin className="h-5 w-5 text-[#d6e1eb]" />
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-[rgba(214,225,235,0.72)]">Home floor</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">{team.arena || 'Arena not available'}</h2>
-              </div>
-            </div>
-            <p className="mt-4 text-slate-300">
-              {team.city || 'Unknown city'} / founded {team.foundedYear || 'n/a'}
+            <p className="mt-5 font-display text-2xl uppercase">{team.arena || 'Арена'}</p>
+            <p className="mt-2 text-sm text-[var(--text-3)]">
+              {team.city || '—'}
+              {team.foundedYear ? ` · с ${team.foundedYear}` : ''}
             </p>
-          </GlowingCard>
+          </div>
 
-          <GlowingCard glowColor="green" className="p-6">
+          <div className="card p-8">
             <div className="flex items-center gap-3">
-              <CalendarRange className="h-5 w-5 text-[#d5e0d2]" />
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-[rgba(213,224,210,0.72)]">Season snapshot</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Rotation and balance</h2>
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-md"
+                style={{ background: 'rgba(255,184,0,0.12)', color: 'var(--gold)' }}
+              >
+                <Building2 className="h-4 w-4" />
               </div>
+              <span
+                className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                style={{ letterSpacing: '0.22em' }}
+              >
+                Конференция
+              </span>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-              <div className="surface-muted">
-                <p className="text-slate-500">Roster loaded</p>
-                <p className="mt-2 text-lg font-semibold text-white">{players.length} players</p>
-              </div>
-              <div className="surface-muted">
-                <p className="text-slate-500">Conference</p>
-                <p className="mt-2 text-lg font-semibold text-white">
-                  {team.conference?.shortName || team.conference?.name || 'League'}
-                </p>
-              </div>
-            </div>
-          </GlowingCard>
-        </div>
-      </section>
+            <p className="mt-5 font-display text-2xl uppercase">{team.conference?.name || 'NBA'}</p>
+            <p className="mt-2 text-sm text-[var(--text-3)]">Дивизион · {team.division?.name || '—'}</p>
+          </div>
 
-      <section className="space-y-5">
-        <div className="flex items-center gap-3">
-          <Users className="h-6 w-6 text-[#ecd8ab]" />
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Roster</p>
-            <h2 className="text-2xl font-semibold text-white">Core rotation</h2>
+          <div className="card p-8">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-md"
+                style={{ background: 'rgba(46,230,138,0.12)', color: 'var(--ok)' }}
+              >
+                <CalendarRange className="h-4 w-4" />
+              </div>
+              <span
+                className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+                style={{ letterSpacing: '0.22em' }}
+              >
+                Состав
+              </span>
+            </div>
+            <p className="mt-5 font-display text-2xl uppercase">{players.length} игроков</p>
+            <p className="mt-2 text-sm text-[var(--text-3)]">Активный roster — клик для деталей.</p>
           </div>
         </div>
 
-        {players.length > 0 ? (
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {players.map((player, index) => (
-              <PlayerCard key={player.id} player={player} delay={index * 0.04} />
-            ))}
+        {/* Team players */}
+        {displayPlayers.length > 0 && (
+          <div className="mt-12">
+            <div className="mb-7 flex items-center gap-4">
+              <Users className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+              <h3 className="m-0 font-display text-3xl uppercase">
+                Лучшие <em style={{ color: 'var(--accent)', fontStyle: 'normal' }}>игроки</em>
+              </h3>
+              <span className="font-mono text-xs uppercase text-[var(--text-3)]">
+                {displayPlayers.length} в составе
+              </span>
+            </div>
+            <div className="flex gap-5 overflow-x-auto pb-2 no-scrollbar">
+              {displayPlayers.map((p, i) => (
+                <PlayerCard key={p.id} player={p} highlight={i === 0} />
+              ))}
+            </div>
           </div>
-        ) : (
-          <GlowingCard glowColor="purple" className="p-8 text-center">
-            <p className="text-white">Player data for this team is not available yet.</p>
-          </GlowingCard>
         )}
-      </section>
-    </div>
+
+        {players.length === 0 && (
+          <div className="mt-12 card p-12 text-center">
+            <p className="font-display text-2xl uppercase">Состав индексируется.</p>
+            <p className="mt-2 text-sm text-[var(--text-3)]">
+              Данные по игрокам {team.name} ещё не загружены.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 };
 

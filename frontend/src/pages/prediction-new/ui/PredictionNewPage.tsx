@@ -1,16 +1,13 @@
-// src/pages/prediction-new/ui/PredictionNewPage.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Cpu, Lock, Sparkles } from 'lucide-react';
+import { ArrowRight, Cpu, Lock, Sparkles, Swords, Zap } from 'lucide-react';
 import { apiRequest, type Team } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { useLanguage } from '@/app/providers/LanguageProvider';
-import { GlowingCard } from '@/shared/ui/GlowingCard';
 import { TeamMark } from '@/shared/ui/TeamMark';
+import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 
 export const PredictionNewPage = () => {
   const { user } = useAuth();
-  const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [teams, setTeams] = useState<Team[]>([]);
@@ -22,47 +19,41 @@ export const PredictionNewPage = () => {
 
   useEffect(() => {
     apiRequest<Team[]>('/teams')
-      .then((data) => setTeams(data.sort((left, right) => right.wins - left.wins)))
-      .catch(() => setError('Could not load teams for prediction.'))
+      .then((data) => setTeams([...data].sort((a, b) => b.wins - a.wins)))
+      .catch(() => setError('Не удалось загрузить команды.'))
       .finally(() => setLoadingTeams(false));
   }, []);
 
-  const selectedTeams = useMemo(() => {
-    const home = teams.find((team) => String(team.id) === team1Id) || null;
-    const away = teams.find((team) => String(team.id) === team2Id) || null;
+  const selected = useMemo(() => {
+    const home = teams.find((t) => String(t.id) === team1Id) || null;
+    const away = teams.find((t) => String(t.id) === team2Id) || null;
     return { home, away };
   }, [team1Id, team2Id, teams]);
 
   const handlePredict = async () => {
     if (!team1Id || !team2Id) {
-      setError(t('prediction.pickBoth'));
+      setError('Выбери обе команды.');
       return;
     }
-
     if (team1Id === team2Id) {
-      setError(t('prediction.differentTeams'));
+      setError('Команды должны быть разными.');
       return;
     }
 
     setSubmitting(true);
     setError('');
-
     try {
       const result = await apiRequest<{ id: string }>(
         '/predict',
         {
           method: 'POST',
-          body: JSON.stringify({
-            team1Id: Number(team1Id),
-            team2Id: Number(team2Id),
-          }),
+          body: JSON.stringify({ team1Id: Number(team1Id), team2Id: Number(team2Id) }),
         },
         false,
       );
-
       navigate(`/prediction/${result.id}`);
-    } catch (predictionError: any) {
-      setError(predictionError.message || 'Prediction failed.');
+    } catch (err: any) {
+      setError(err?.message || 'Прогноз не выполнен.');
     } finally {
       setSubmitting(false);
     }
@@ -70,130 +61,258 @@ export const PredictionNewPage = () => {
 
   if (!user) {
     return (
-      <GlowingCard glowColor="purple" className="mx-auto max-w-3xl p-8 text-center">
-        <Lock className="mx-auto h-10 w-10 text-[#ead9d1]" />
-        <h1 className="mt-5 text-3xl font-semibold text-white">{t('prediction.signInRequired')}</h1>
-        <p className="mt-3 text-slate-300">
-          {t('prediction.signInDesc')}
-        </p>
-        <Link to="/auth" className="btn-primary mt-6">
-          {t('prediction.unlock')}
-        </Link>
-      </GlowingCard>
+      <section className="flex min-h-[80vh] items-center justify-center">
+        <div className="container-x">
+          <div className="card mx-auto max-w-2xl p-10 text-center sm:p-14">
+            <div
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-md"
+              style={{ background: 'rgba(255,90,31,0.15)', color: 'var(--accent)' }}
+            >
+              <Lock className="h-6 w-6" />
+            </div>
+            <h1
+              className="display-h mt-6"
+              style={{ fontSize: 'clamp(36px, 5vw, 56px)' }}
+            >
+              ВОЙДИ <em>ЧТОБЫ</em> ПРОГНОЗИРОВАТЬ
+            </h1>
+            <p className="mx-auto mt-4 max-w-md text-sm text-[var(--text-3)]">
+              Прогнозы привязаны к аккаунту, чтобы сохранять историю и отслеживать точность.
+            </p>
+            <Link to="/auth" className="btn btn-primary mt-7">
+              <Sparkles className="h-4 w-4" />
+              Войти
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
     );
   }
 
   if (loadingTeams) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-[rgba(216,180,106,0.22)] border-t-[#c96a2b]" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <LoadingSpinner size="md" label="Загружаем команды" />
       </div>
     );
   }
 
+  const canSubmit = team1Id && team2Id && team1Id !== team2Id && !submitting;
+
   return (
-    <div className="space-y-8">
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
-        <GlowingCard glowColor="orange" className="p-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="data-chip">
-              <Cpu className="h-3.5 w-3.5" />
-              {t('prediction.engine')}
-            </span>
-            <span className="data-chip">{t('prediction.teamsAvailable', { count: teams.length })}</span>
+    <section className="section">
+      <div className="container-x">
+        <div className="section-head">
+          <div className="flex flex-col gap-3">
+            <span className="eyebrow"><span className="dot" />MODEL ENGINE · MATCHUP</span>
+            <h2>
+              СОБЕРИ <em>МАТЧАП</em>.<br />ПОЛУЧИ ОЦЕНКУ.
+            </h2>
           </div>
-          <h1 className="mt-5 max-w-3xl font-spacegrotesk text-4xl font-bold text-white sm:text-5xl">
-            {t('prediction.buildMatchup')}
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
-            {t('prediction.historicalContext')}
+          <p className="lead">
+            Выбери две команды. Бэкенд рассчитает вероятность победы, ожидаемый счёт и сохранит прогноз
+            в твоей истории.
           </p>
-        </GlowingCard>
+        </div>
 
-        <GlowingCard glowColor="blue" className="p-6">
-          <p className="text-xs uppercase tracking-[0.28em] text-[rgba(214,225,235,0.72)]">{t('prediction.preview')}</p>
-          <div className="mt-5 space-y-3">
-            {[selectedTeams.home, selectedTeams.away].map((team, index) => (
-              <div key={index} className="surface-muted flex items-center gap-4">
-                <TeamMark team={team} size="md" />
-                <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{index === 0 ? t('prediction.homeSide') : t('prediction.awaySide')}</p>
-                  <p className="mt-1 truncate text-lg font-semibold text-white">{team?.name || t('prediction.selectTeam')}</p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {team ? `${team.wins}-${team.losses} / ${team.avgPointsFor.toFixed(1)} PPG` : t('prediction.waitingSelection')}
-                  </p>
-                </div>
+        {/* Matchup builder */}
+        <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_auto_1fr]">
+          <TeamSelector
+            label="Дома"
+            value={team1Id}
+            onChange={setTeam1Id}
+            teams={teams}
+            selected={selected.home}
+            disabledTeamId={team2Id}
+          />
+
+          <div className="flex flex-col items-center justify-center gap-3 px-2">
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-md"
+              style={{
+                background: 'rgba(255,90,31,0.10)',
+                border: '1px solid rgba(255,90,31,0.30)',
+                color: 'var(--accent)',
+              }}
+            >
+              <Swords className="h-6 w-6" />
+            </div>
+            <span className="font-display text-2xl" style={{ color: 'var(--accent)' }}>
+              vs
+            </span>
+          </div>
+
+          <TeamSelector
+            label="Выезд"
+            value={team2Id}
+            onChange={setTeam2Id}
+            teams={teams}
+            selected={selected.away}
+            disabledTeamId={team1Id}
+          />
+        </div>
+
+        {error && (
+          <div
+            className="mt-5 rounded-md border p-4 text-sm"
+            style={{
+              borderColor: 'rgba(255,56,88,0.3)',
+              background: 'rgba(255,56,88,0.08)',
+              color: 'var(--danger)',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Submit */}
+        <div
+          className="card mt-10 overflow-hidden p-8 sm:p-10"
+          style={{
+            background:
+              'linear-gradient(120deg, rgba(255,90,31,0.10), transparent 50%), linear-gradient(240deg, rgba(255,184,0,0.06), transparent 60%), var(--surface)',
+          }}
+        >
+          <div className="grid items-end gap-8 lg:grid-cols-[1fr_auto]">
+            <div>
+              <span className="tag tag-gold">
+                <Sparkles className="h-3 w-3" />
+                ГОТОВ
+              </span>
+              <h3 className="display-h mt-5" style={{ fontSize: 'clamp(36px, 5vw, 56px)' }}>
+                ЗАПУСТИТЬ <em>МОДЕЛЬ</em>
+              </h3>
+              <p className="mt-3 max-w-[480px] text-sm leading-relaxed text-[var(--text-2)]">
+                Результат будет привязан к аккаунту: история, точность и прогресс обновятся после завершения матча.
+              </p>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="tag">EMA features</span>
+                <span className="tag">DNN classifier</span>
+                <span className="tag">Калиброванная вероятность</span>
+                <span className="tag">Ожидаемый счёт</span>
               </div>
-            ))}
-          </div>
-        </GlowingCard>
-      </section>
+            </div>
 
-      <GlowingCard glowColor="green" className="p-8">
-        <div className="grid gap-6 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
-          <div className="space-y-3">
-            <label className="text-xs uppercase tracking-[0.26em] text-[rgba(236,216,171,0.72)]">{t('prediction.homeSide')}</label>
-            <select
-              value={team1Id}
-              onChange={(event) => setTeam1Id(event.target.value)}
-              className="field-shell w-full px-4 py-4 text-lg font-semibold text-white"
-              style={{ backgroundColor: 'rgba(10, 14, 20, 0.8)' }}
+            <button
+              type="button"
+              onClick={handlePredict}
+              disabled={!canSubmit}
+              className="btn btn-primary group"
+              style={{ height: 64, padding: '0 30px', fontSize: 15 }}
             >
-              <option value="" className="bg-[rgba(10,14,20,0.95)] text-slate-400">
-                {t('prediction.chooseHome')}
-              </option>
-              {teams.map((team) => (
-                <option
-                  key={team.id}
-                  value={team.id}
-                  className="bg-[rgba(10,14,20,0.95)] text-white"
-                >
-                  {team.name} ({team.wins}-{team.losses})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center justify-center mt-12 lg:mt-14">
-            <div className="status-pill bg-white/5 text-slate-300 text-lg px-6 py-2">{t('common.vs')}</div>
-          </div>
-          <div className="space-y-3">
-            <label className="text-xs uppercase tracking-[0.26em] text-[rgba(214,225,235,0.72)]">{t('prediction.awaySide')}</label>
-            <select
-              value={team2Id}
-              onChange={(event) => setTeam2Id(event.target.value)}
-              className="field-shell w-full px-4 py-4 text-lg font-semibold text-white"
-              style={{ backgroundColor: 'rgba(10, 14, 20, 0.8)' }}
-            >
-              <option value="" className="bg-[rgba(10,14,20,0.95)] text-slate-400">
-                {t('prediction.chooseAway')}
-              </option>
-              {teams.map((team) => (
-                <option
-                  key={team.id}
-                  value={team.id}
-                  className="bg-[rgba(10,14,20,0.95)] text-white"
-                >
-                  {team.name} ({team.wins}-{team.losses})
-                </option>
-              ))}
-            </select>
+              {submitting ? (
+                <>
+                  <span
+                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current"
+                    style={{ borderTopColor: 'transparent' }}
+                  />
+                  Считаем прогноз...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-5 w-5" />
+                  Получить прогноз
+                  <ArrowRight className="h-5 w-5 arrow" />
+                </>
+              )}
+            </button>
           </div>
         </div>
-
-        {error && <p className="mt-5 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</p>}
-
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
-          <div className="text-sm text-slate-300">
-            <p>{t('prediction.savedToAccount')}</p>
-          </div>
-          <button type="button" onClick={handlePredict} disabled={submitting} className="btn-primary disabled:cursor-not-allowed disabled:opacity-70">
-            <Sparkles className="h-4 w-4" />
-            {submitting ? t('prediction.running') : t('prediction.generate')}
-          </button>
-        </div>
-      </GlowingCard>
-    </div>
+      </div>
+    </section>
   );
 };
+
+interface TeamSelectorProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  teams: Team[];
+  selected: Team | null;
+  disabledTeamId: string;
+}
+
+function TeamSelector({ label, value, onChange, teams, selected, disabledTeamId }: TeamSelectorProps) {
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between">
+        <span
+          className="font-mono text-[10px] uppercase text-[var(--text-3)]"
+          style={{ letterSpacing: '0.22em' }}
+        >
+          {label}
+        </span>
+        {selected && (
+          <span className="tag tag-hot">
+            <Cpu className="h-3 w-3" />#{teams.findIndex((t) => t.id === selected.id) + 1}
+          </span>
+        )}
+      </div>
+
+      {selected ? (
+        <div className="mt-5 flex items-start gap-5">
+          <TeamMark team={selected} size="xl" showGlow />
+          <div className="min-w-0">
+            <div className="font-display text-2xl uppercase">{selected.name}</div>
+            <div className="mt-0.5 text-xs text-[var(--text-3)]">{selected.city || '—'}</div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <Stat label="REC" value={`${selected.wins}–${selected.losses}`} />
+              <Stat label="PF" value={selected.avgPointsFor.toFixed(1)} />
+              <Stat label="PA" value={selected.avgPointsAgainst.toFixed(1)} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="mt-5 rounded-md border border-dashed p-6 text-center text-sm text-[var(--text-3)]"
+          style={{ borderColor: 'var(--line-strong)' }}
+        >
+          Выбери команду ниже
+        </div>
+      )}
+
+      <div className="mt-5">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="field cursor-pointer"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238a8a92' stroke-width='2'%3E%3Cpath d='M19 9l-7 7-7-7'/%3E%3C/svg%3E\")",
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 16px center',
+            backgroundSize: '14px',
+            appearance: 'none',
+            paddingRight: 40,
+          }}
+        >
+          <option value="">Выбери команду…</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.id} disabled={String(team.id) === disabledTeamId}>
+              {team.name} ({team.wins}–{team.losses})
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-2.5">
+      <div
+        className="font-mono text-[9px] uppercase text-[var(--text-3)]"
+        style={{ letterSpacing: '0.14em' }}
+      >
+        {label}
+      </div>
+      <div className="mt-1 font-display text-base tab-num">{value}</div>
+    </div>
+  );
+}
 
 export default PredictionNewPage;

@@ -25,13 +25,31 @@ async def toggle_user_block(
 
     try:
         body = await request.json()
-        is_blocked = body.get("isBlocked", False)
+        is_blocked = bool(body.get("isBlocked", body.get("is_blocked", False)))
 
         current_user = await require_admin(request)
         if current_user.user_id == user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You cannot block yourself"
+                detail="Нельзя заблокировать собственный аккаунт"
+            )
+
+        target = db.execute(
+            text("SELECT id, email, name, username, role, is_blocked, created_at FROM users WHERE id = :user_id"),
+            {"user_id": user_id}
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден"
+            )
+
+        target_data = dict(target._mapping)
+        if target_data.get("role") == "admin" and is_blocked:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Администратор не может заблокировать администратора"
             )
 
         # Обновляем статус в БД
@@ -55,7 +73,7 @@ async def toggle_user_block(
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                detail="Пользователь не найден"
             )
 
         user_data = dict(result._mapping)
@@ -119,15 +137,12 @@ async def get_admin_stats(
         total_backups = db.execute(text("SELECT COUNT(*) FROM backups")).scalar() if check_table_exists("backups") else 0
 
         accuracy = None
-        if check_table_exists("model_metrics"):
-            result = db.execute(text("""
-                SELECT validation_accuracy FROM model_metrics 
-                WHERE status = 'completed' 
-                ORDER BY training_date DESC 
-                LIMIT 1
-            """)).fetchone()
-            if result:
-                accuracy = result[0] * 100 if result[0] else None
+        try:
+            from services.ai_service import AIService
+            model_stats = await AIService(db).get_model_stats()
+            accuracy = model_stats.get("accuracy")
+        except Exception as e:
+            print(f"Error getting live model accuracy for admin stats: {e}")
 
         last_backup_at = None
         if check_table_exists("backups"):
