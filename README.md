@@ -85,11 +85,9 @@ pytest tests/
 ## Архитектура
 
 
-Browser -> Nginx -> FastAPI -> PostgreSQL<br>
-                       |<br>
-                       +-> Redis<br>
-                       |<br>
-                       +-> TensorFlow model<br>
+Browser ->Nginx(reverse proxy) -> FastAPI (бэкенд) -> PostgreSQL/Redis<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;|<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;└── TensorFlow модель 
 
 ## Участие в разработке
 
