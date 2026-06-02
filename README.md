@@ -85,19 +85,11 @@ pytest tests/
 ## Архитектура
 
 
-Client (Browser)<br>
-     │<br>
-     ▼<br>
-Nginx (reverse proxy, port 80/443)<br>
-     │<br>
-     ▼<br>
-FastAPI (backend, port 8000)<br>
-     │<br>
-     ├──► PostgreSQL (database)<br>
-     │<br>
-     ├──► Redis (cache / auth)<br>
-     │<br>
-     └──► TensorFlow model (predictions)<br>
+Browser -> Nginx -> FastAPI -> PostgreSQL
+                       |
+                       +-> Redis
+                       |
+                       +-> TensorFlow model
 
 ## Участие в разработке
 
