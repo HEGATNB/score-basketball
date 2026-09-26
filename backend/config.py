@@ -30,9 +30,16 @@ class Config:
 
     @property
     def DATABASE_URL(self) -> str:
+        # Приоритет 1: готовая строка подключения из окружения (Render, Neon)
+        url_from_env = os.getenv("DATABASE_URL")
+        if url_from_env:
+            return url_from_env
+
+        # Приоритет 2: сборка из отдельных переменных (локальная разработка)
         if all([self.DB_NAME, self.DB_USER, self.DB_PASSWORD]):
             return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-        return os.getenv("DATABASE_URL", "")
+
+        return ""
 
     # JWT настройки
     JWT_SECRET = os.getenv("JWT_SECRET")
