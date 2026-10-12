@@ -10,7 +10,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Nginx с HTTPS
+# Nginx; TLS завершается на внешнем ingress.
 
 FROM nginx:alpine
 
@@ -22,15 +22,10 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Копируем SSL сертификаты
-
-COPY nginx/ssl /etc/nginx/ssl
-
 # Копируем собранный фронтенд
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
-EXPOSE 443
 
 CMD ["nginx", "-g", "daemon off;"]
