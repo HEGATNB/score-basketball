@@ -13,7 +13,7 @@ interface MarqueeProps {
 
 const FALLBACK: MarqueeItem[] = [
   { text: 'SEASON 2025/26' },
-  { text: 'NBA · LIVE DATA', highlight: true },
+  { text: 'NBA · ЖИВЫЕ ДАННЫЕ', highlight: true },
   { text: 'AI-АНАЛИТИКА' },
   { text: 'ПРИСОЕДИНЯЙСЯ К РЕЙТИНГУ', highlight: true },
 ];
@@ -47,7 +47,7 @@ export const Marquee = ({ items }: MarqueeProps) => {
         const tonight = sb?.upcoming?.[0];
         if (tonight) {
           out.push({
-            text: `ИГРА ВЕЧЕРА · ${tonight.home.abbrev || '?'} VS ${tonight.away.abbrev || '?'}`,
+            text: `ИГРА ВЕЧЕРА · ${tonight.home.abbrev || '?'} — ${tonight.away.abbrev || '?'}`,
             highlight: true,
           });
         }
@@ -84,7 +84,7 @@ export const Marquee = ({ items }: MarqueeProps) => {
         } else {
           out.push({ text: 'SEASON 2025/26' });
         }
-        out.push({ text: 'NBA · LIVE DATA · MODEL INSIGHTS' });
+        out.push({ text: 'NBA · ЖИВЫЕ ДАННЫЕ · ПРОГНОЗЫ' });
 
         if (!cancelled) setDynamic(out.length > 0 ? out : FALLBACK);
       } catch {

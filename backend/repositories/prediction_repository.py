@@ -5,11 +5,12 @@ import json
 
 
 class PredictionRepository(BaseRepository):
-    """Репозиторий для работы с таблицей predictions"""
+    # Репозиторий для работы с таблицей predictions
 
     def __init__(self, db: Session):
         super().__init__(db)
 
+    # Создание нового предсказания
     def create(self, user_id: int, team1_id: int, team2_id: int,
                prob1: float, prob2: float, score1: int, score2: int,
                confidence: float, model_version: str, features: Dict = None) -> int:
@@ -37,6 +38,7 @@ class PredictionRepository(BaseRepository):
         result = self._execute_with_commit(query, params)
         return result.scalar()
 
+    # Получение предсказания по ID
     def get_by_id(self, prediction_id: int) -> Optional[Dict[str, Any]]:
         query = """
             SELECT 
@@ -62,6 +64,7 @@ class PredictionRepository(BaseRepository):
         """
         return self._fetch_one(query, {"id": prediction_id})
 
+    # Получение предсказаний пользователя
     def get_by_user(self, user_id: int, skip: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         query = """
             SELECT 
@@ -89,6 +92,7 @@ class PredictionRepository(BaseRepository):
         """
         return self._fetch_all(query, {"user_id": user_id, "limit": limit, "skip": skip})
 
+    # Оценка точности предсказаний на основе завершенных матчей
     def evaluate_accuracy(self) -> Optional[float]:
         query = """
             SELECT 
@@ -108,10 +112,12 @@ class PredictionRepository(BaseRepository):
             return result["correct"] / result["total"]
         return None
 
+    # Получение статистики по предсказаниям
     def get_stats(self) -> Dict[str, Any]:
         total = self._fetch_scalar("SELECT COUNT(*) FROM predictions") or 0
         users = self._fetch_scalar("SELECT COUNT(DISTINCT user_id) FROM predictions") or 0
         return {"total_predictions": total, "total_users": users}
 
+    # Общее количество предсказаний
     def count(self) -> int:
         return self._fetch_scalar("SELECT COUNT(*) FROM predictions") or 0

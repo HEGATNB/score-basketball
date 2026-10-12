@@ -15,7 +15,7 @@ from services.audit_service import AuditService
 from services.model_metrics_service import ModelMetricsService
 import traceback
 
-# Настройка логирования с поддержкой UTF-8
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -42,13 +42,13 @@ class DataUpdater:
 
         try:
             logger.info("Loading new games and updating results from ESPN...")
-            # days_back=2 - проверяем вчера и сегодня
+            # days_back=2 = проверяет вчера и сегодня
             result = update_db_with_new_games(days_back=2)
 
             logger.info(f"Updated results (scheduled -> finished): {result.get('updated_results', 0)}")
             logger.info(f"New games added: {result.get('new_games', 0)}")
 
-            # Логируем обновление
+            # Логирование обновления
             try:
                 db = SessionLocal()
                 audit = AuditService(db)

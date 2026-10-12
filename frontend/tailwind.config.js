@@ -10,22 +10,42 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Surfaces — deep court hue
-        bg: { DEFAULT: '#08080b', 2: '#0e0e13' },
-        surface: { DEFAULT: '#14141c', 2: '#1b1b25', 3: '#23232f' },
-        // Text
-        text: { DEFAULT: '#f5f1ea', 2: '#c2bfb8', 3: '#8a8a92', mute: '#5a5a64' },
-        // Accents
+        // Surfaces — deep cool navy (blue-charcoal, eye-comfort tuned)
+        bg: { DEFAULT: '#0a0e1a', 2: '#0d1322' },
+        surface: { DEFAULT: '#131a2c', 2: '#1a2238', 3: '#232d47' },
+        // Text — cool off-white neutrals (reduce glare on navy)
+        text: { DEFAULT: '#eef2fb', 2: '#aeb8cf', 3: '#76819f', mute: '#515c78' },
+        // SCORE brand — warm amber-orange accent on navy
         accent: {
-          DEFAULT: '#ff5a1f',
-          soft: 'rgba(255, 90, 31, 0.14)',
-          glow: 'rgba(255, 90, 31, 0.55)',
+          DEFAULT: '#d26a34',
+          2: '#e48a54',
+          soft: 'rgba(210, 106, 52, 0.13)',
+          glow: 'rgba(210, 106, 52, 0.34)',
+          strong: '#e48a54',
+          deep: '#9c4719',
         },
-        gold: '#ffb800',
-        neon: '#d1ff3a',
-        info: '#5db8ff',
-        danger: '#ff3858',
-        ok: '#2ee68a',
+        // AI is a cool azure — complementary contrast to the orange accent
+        ai: {
+          DEFAULT: '#d99a4f',
+          soft: 'rgba(217, 154, 79, 0.13)',
+          glow: 'rgba(217, 154, 79, 0.32)',
+          deep: '#8a5a1f',
+        },
+        positive: {
+          DEFAULT: '#38d39f',
+          soft: 'rgba(56, 211, 159, 0.12)',
+          glow: 'rgba(56, 211, 159, 0.32)',
+        },
+        confidence: {
+          DEFAULT: '#ffb454',
+          soft: 'rgba(255, 180, 84, 0.12)',
+          glow: 'rgba(255, 180, 84, 0.32)',
+        },
+        gold: '#e3b341',
+        neon: '#8fe04a',
+        info: '#d99a4f',
+        danger: '#ff5d6c',
+        ok: '#38d39f',
       },
       borderRadius: {
         sm: '8px',
@@ -35,8 +55,10 @@ export default {
       },
       boxShadow: {
         lg: '0 30px 80px -20px rgba(0,0,0,0.7)',
-        accent: '0 8px 24px -8px rgba(255,90,31,0.55)',
-        'accent-lg': '0 30px 60px -20px rgba(255,90,31,0.55)',
+        accent: '0 8px 24px -8px rgba(210,106,52,0.34)',
+        'accent-lg': '0 30px 60px -20px rgba(210,106,52,0.36)',
+        ai: '0 8px 24px -8px rgba(217,154,79,0.32)',
+        'ai-lg': '0 24px 60px -16px rgba(217,154,79,0.36)',
       },
       keyframes: {
         marquee: {

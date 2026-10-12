@@ -180,7 +180,7 @@ export const SearchPalette = ({ open, onClose }: SearchPaletteProps) => {
                           <span
                             className="team-sq team-sq-sm"
                             style={{
-                              background: 'linear-gradient(135deg, #5db8ff, #d1ff3a)',
+                              background: 'linear-gradient(135deg, #d99a4f, #d1ff3a)',
                               color: '#0a0a0c',
                             }}
                           >

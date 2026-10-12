@@ -16,7 +16,12 @@ function asText(v: unknown, fallback = ''): string {
 }
 
 export const PlayerAvatar = ({ player, variant = 'card', className = '' }: PlayerAvatarProps) => {
-  const candidates = useMemo(() => getPlayerImageCandidates(player), [player]);
+  // Row avatars are tiny (56px) → fetch the light thumbnail; the larger
+  // card variant gets the high-res headshot.
+  const candidates = useMemo(
+    () => getPlayerImageCandidates(player, { thumb: variant === 'row' }),
+    [player, variant],
+  );
   const initials = useMemo(() => getPlayerInitials(player), [player]);
   const teamBrand = getTeamBrand({
     abbrev: asText(player.team?.abbrev) || asText(player.team_abbrev),
@@ -59,16 +64,17 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
           <img
             src={safeSrc}
             alt={altText}
+            width={56}
+            height={56}
             className="h-full w-full object-cover object-top"
-            style={{ mixBlendMode: 'luminosity' }}
             loading="lazy"
-            referrerPolicy="no-referrer"
+            decoding="async"
             onError={handleError}
           />
         ) : (
           <span
             className="font-display text-sm font-semibold"
-            style={{ color: '#0a0a0c', textShadow: '0 1px 2px rgba(255,255,255,0.25)' }}
+            style={{ color: '#fff5f5', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}
           >
             {initials}
           </span>
@@ -79,21 +85,38 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
 
   return (
     <div className={`relative aspect-[4/3] w-full overflow-hidden ${className}`} style={tint}>
+      {/* Faint court pattern as backdrop when photo loads */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(45deg, rgba(0,0,0,0.04) 0 12px, transparent 12px 24px)',
+        }}
+      />
       {!allFailed && typeof safeSrc === 'string' && safeSrc ? (
         <img
           src={safeSrc}
           alt={altText}
+          width={600}
+          height={436}
           className="absolute inset-0 h-full w-full object-cover object-top"
-          style={{ mixBlendMode: 'luminosity', filter: 'contrast(1.1)' }}
+          style={{ filter: 'saturate(1.04) contrast(1.03)' }}
           loading="lazy"
-          referrerPolicy="no-referrer"
+          decoding="async"
           onError={handleError}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
-            className="font-display text-7xl"
-            style={{ color: 'rgba(255,255,255,0.6)', textShadow: '0 4px 24px rgba(0,0,0,0.55)' }}
+            className="font-display"
+            style={{
+              fontSize: 110,
+              lineHeight: 1,
+              color: 'rgba(255,255,255,0.85)',
+              textShadow: '0 6px 30px rgba(0,0,0,0.6)',
+              WebkitTextStroke: '2px rgba(0,0,0,0.18)',
+            }}
           >
             {initials}
           </span>
@@ -103,7 +126,7 @@ export const PlayerAvatar = ({ player, variant = 'card', className = '' }: Playe
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.85) 100%)',
+            'linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.42) 60%, rgba(0,0,0,0.88) 100%)',
         }}
       />
     </div>

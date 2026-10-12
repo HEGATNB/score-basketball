@@ -43,4 +43,18 @@ export const authService = {
   isAuthenticated() {
     return Boolean(localStorage.getItem(TOKEN_KEY));
   },
+
+  async updateProfile(patch: { name?: string; username?: string; email?: string }) {
+    return requestJson<AuthUser>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  async changePassword(payload: { currentPassword: string; newPassword: string }) {
+    return requestJson<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };

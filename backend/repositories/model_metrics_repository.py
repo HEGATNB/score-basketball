@@ -6,12 +6,13 @@ from datetime import datetime
 
 
 class ModelMetricsRepository(BaseRepository):
-    """Репозиторий для работы с таблицей model_metrics"""
+    # Репозиторий для работы с таблицей model_metrics
 
     def __init__(self, db: Session):
         super().__init__(db)
         self._create_table_if_not_exists()
 
+    # Создание таблицы model_metrics если она не существует
     def _create_table_if_not_exists(self):
         query = """
             CREATE TABLE IF NOT EXISTS model_metrics (
@@ -33,6 +34,7 @@ class ModelMetricsRepository(BaseRepository):
         self._execute(query)
         self.db.commit()
 
+    # Создание записи с метриками модели
     def create(self, model_version: str, training_games_count: int = None,
                accuracy: float = None, loss: float = None,
                validation_accuracy: float = None, validation_loss: float = None,
@@ -66,6 +68,7 @@ class ModelMetricsRepository(BaseRepository):
         result = self._execute_with_commit(query, params)
         return {"id": result.scalar(), "model_version": model_version, "status": status}
 
+    # Получение последних метрик
     def get_latest(self) -> Optional[Dict[str, Any]]:
         query = """
             SELECT * FROM model_metrics 
@@ -81,6 +84,7 @@ class ModelMetricsRepository(BaseRepository):
                 pass
         return result
 
+    # Получение истории метрик
     def get_history(self, limit: int = 10) -> List[Dict[str, Any]]:
         query = """
             SELECT * FROM model_metrics 
@@ -96,6 +100,7 @@ class ModelMetricsRepository(BaseRepository):
                     pass
         return results
 
+    # Получение статистики по обучению модели
     def get_stats(self) -> Dict[str, Any]:
         query = """
             SELECT 

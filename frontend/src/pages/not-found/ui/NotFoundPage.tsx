@@ -8,9 +8,9 @@ export default function NotFoundPage() {
         <div
           className="mx-auto mb-8 flex h-16 w-16 items-center justify-center rounded-md"
           style={{
-            background: 'linear-gradient(135deg, var(--accent), var(--gold))',
-            color: '#0a0a0c',
-            boxShadow: 'var(--shadow-lg)',
+            background: 'linear-gradient(135deg, var(--accent-strong), var(--accent-deep))',
+            color: '#fff5f5',
+            boxShadow: '0 20px 50px -15px var(--accent-glow)',
           }}
         >
           <span className="font-display text-4xl">404</span>

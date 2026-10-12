@@ -65,13 +65,13 @@ async def require_admin(request: Request):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован",
+            detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Доступ запрещен. Требуются права администратора"
+            detail="Access denied. Administrator rights are required"
         )
     return user
 
@@ -81,12 +81,12 @@ async def require_admin_or_operator(request: Request):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован",
+            detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if user.role not in ["admin", "operator"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Доступ запрещен. Требуются права администратора или оператора"
+            detail="Access denied. Administrator or operator rights are required"
         )
     return user

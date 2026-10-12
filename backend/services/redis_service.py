@@ -13,6 +13,7 @@ class RedisService:
         self.client = None
         self._connect()
 
+    # Подключается к Redis
     def _connect(self):
         try:
             self.client = redis.Redis(
@@ -30,6 +31,7 @@ class RedisService:
             logger.warning(f"️ Ошибка подключения Redis {e}. Запуск без Redis.")
             self.client = None
 
+    # Проверяет доступность Redis
     def is_available(self) -> bool:
         if not self.client:
             return False
@@ -40,7 +42,6 @@ class RedisService:
             return False
 
     # Добавляет токен в черный список
-
     def blacklist_token(self, token: str, expires_in: int = 604800) -> bool:
         if not self.is_available():
             return False
@@ -54,7 +55,6 @@ class RedisService:
             return False
 
     # Проверяет есть ли токен в черном списке
-
     def is_token_blacklisted(self, token: str) -> bool:
         if not self.is_available():
             return False
@@ -66,7 +66,6 @@ class RedisService:
             return False
 
     # Отзывает все токены пользователя
-
     def revoke_all_user_tokens(self, user_id: int, expires_in: int = 604800) -> bool:
         if not self.is_available():
             return False
@@ -80,7 +79,6 @@ class RedisService:
             return False
 
     # Проверяет не были ли отозваны токены пользователя после выдачи токена
-
     def is_user_tokens_revoked(self, user_id: int, token_issued_at: float) -> bool:
         if not self.is_available():
             return False
@@ -95,7 +93,6 @@ class RedisService:
             return False
 
     # Проверяет лимит запросов
-
     def check_rate_limit(self, key: str, limit: int = 5, period: int = 60) -> tuple:
         if not self.is_available():
             return True, limit, 0
@@ -120,8 +117,7 @@ class RedisService:
             logger.error(f"Error checking rate limit: {e}")
             return True, limit, 0
 
-    # Сброс лимита запросов для ключа
-
+    # Сбрасывает лимит запросов для ключа
     def reset_rate_limit(self, key: str) -> bool:
         if not self.is_available():
             return False
@@ -133,8 +129,7 @@ class RedisService:
             logger.error(f"Error resetting rate limit: {e}")
             return False
 
-    # Получение данных их хэша
-
+    # Получает данные из кеша
     def get(self, key: str) -> Optional[Any]:
         if not self.is_available():
             return None
@@ -146,7 +141,8 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error getting from cache: {e}")
             return None
-    # Сохранение в хеш
+
+    # Сохраняет данные в кеш
     def set(self, key: str, value: Any, expire: int = 300) -> bool:
         if not self.is_available():
             return False
@@ -157,8 +153,7 @@ class RedisService:
             logger.error(f"Error setting cache: {e}")
             return False
 
-    # Удаление из кеша
-
+    # Удаляет данные из кеша
     def delete(self, key: str) -> bool:
         if not self.is_available():
             return False
@@ -169,8 +164,7 @@ class RedisService:
             logger.error(f"Error deleting from cache: {e}")
             return False
 
-    # Очистка ключей по шаблону
-
+    # Очищает ключи по шаблону
     def clear_pattern(self, pattern: str) -> int:
         if not self.is_available():
             return 0
@@ -183,10 +177,7 @@ class RedisService:
             logger.error(f"Error clearing pattern: {e}")
             return 0
 
-    # СЕССИИ ПОЛЬЗОВАТЕЛЕЙ
-
     # Сохраняет сессию пользователя
-
     def save_user_session(self, user_id: int, token: str, expires_in: int = 604800) -> bool:
         if not self.is_available():
             return False
@@ -197,8 +188,8 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error storing user session: {e}")
             return False
-    # Получает все сессии пользователя
 
+    # Получает все сессии пользователя
     def get_user_sessions(self, user_id: int) -> List[str]:
         if not self.is_available():
             return []
@@ -215,7 +206,6 @@ class RedisService:
             return []
 
     # Отзывает сессию пользователя
-
     def revoke_user_session(self, user_id: int, token_prefix: str) -> bool:
         if not self.is_available():
             return False
@@ -228,6 +218,5 @@ class RedisService:
             return False
 
 
-# Создаем глобальный экземпляр
-
+# Создает глобальный экземпляр
 redis_service = RedisService()

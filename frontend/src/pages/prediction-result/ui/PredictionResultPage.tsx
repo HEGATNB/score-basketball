@@ -104,7 +104,7 @@ export const PredictionResultPage = () => {
           className="card mt-10 overflow-hidden p-8 lg:p-12"
           style={{
             background:
-              'linear-gradient(120deg, rgba(255,90,31,0.10), transparent 50%), var(--surface)',
+              'linear-gradient(120deg, rgba(210,106,52,0.10), transparent 50%), var(--surface)',
           }}
         >
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6">
@@ -177,7 +177,7 @@ export const PredictionResultPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,90,31,0.12)', color: 'var(--accent)' }}
+                style={{ background: 'rgba(210,106,52,0.12)', color: 'var(--accent)' }}
               >
                 <Award className="h-4 w-4" />
               </div>
@@ -198,7 +198,7 @@ export const PredictionResultPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,184,0,0.12)', color: 'var(--gold)' }}
+                style={{ background: 'rgba(230,185,74,0.12)', color: 'var(--gold)' }}
               >
                 <Trophy className="h-4 w-4" />
               </div>
@@ -299,7 +299,7 @@ function TeamProb({ team, probability, expectedScore, isWinner }: TeamProbProps)
             className="absolute -right-2 -top-2 flex h-9 w-9 items-center justify-center rounded-full"
             style={{
               background: 'linear-gradient(135deg, var(--gold), var(--accent))',
-              boxShadow: '0 0 20px rgba(255,184,0,0.55)',
+              boxShadow: '0 0 20px rgba(230,185,74,0.55)',
               color: '#0a0a0c',
             }}
           >

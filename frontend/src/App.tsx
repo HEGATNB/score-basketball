@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './app/Layout';
 import { ProtectedRoute } from './app/ProtectedRoute';
 import { AuthProvider } from './app/providers/AuthProvider';
+import { I18nProvider } from './shared/i18n';
 import { HomePage } from './pages/home/ui/HomePage';
 import { LoadingSpinner } from './shared/ui/LoadingSpinner';
 
@@ -13,6 +14,7 @@ const MatchPage = lazy(() => import('./pages/matches/ui/MatchPage'));
 const PredictionNewPage = lazy(() => import('./pages/prediction-new/ui/PredictionNewPage'));
 const PredictionResultPage = lazy(() => import('./pages/prediction-result/ui/PredictionResultPage'));
 const HistoryPage = lazy(() => import('./pages/history/ui/HistoryPage'));
+const AccountPage = lazy(() => import('./pages/account/ui/AccountPage'));
 const AuthPage = lazy(() => import('./pages/auth/ui/AuthPage'));
 const AnalyticsPage = lazy(() => import('./pages/analytics/ui/AnalyticsPage'));
 const AdminPage = lazy(() => import('./pages/admin/ui/AdminPage'));
@@ -28,6 +30,7 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      <I18nProvider>
       <AuthProvider>
         <Suspense fallback={<LoadingSpinner fullScreen />}>
           <Routes>
@@ -56,6 +59,14 @@ function App() {
                 }
               />
               <Route
+                path="/account"
+                element={
+                  <ProtectedRoute>
+                    <AccountPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/history"
                 element={
                   <ProtectedRoute>
@@ -78,6 +89,7 @@ function App() {
           </Routes>
         </Suspense>
       </AuthProvider>
+      </I18nProvider>
     </BrowserRouter>
   );
 }

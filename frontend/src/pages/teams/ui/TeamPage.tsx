@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, CalendarRange, MapPin, Trophy, Users } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarRange, ChevronLeft, ChevronRight, MapPin, Trophy, Users } from 'lucide-react';
 import { apiRequest, type Player, type Team } from '@/shared/api/client';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
@@ -12,6 +12,7 @@ export const TeamPage = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const rosterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!teamId) {
@@ -121,7 +122,7 @@ export const TeamPage = () => {
                 className="h-full"
                 style={{
                   width: `${Math.max(8, winRate)}%`,
-                  background: 'linear-gradient(90deg, var(--accent), var(--gold))',
+                  background: 'linear-gradient(90deg, var(--accent-deep), var(--accent-strong))',
                 }}
               />
             </div>
@@ -175,7 +176,7 @@ export const TeamPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,90,31,0.12)', color: 'var(--accent)' }}
+                style={{ background: 'rgba(210,106,52,0.12)', color: 'var(--accent)' }}
               >
                 <MapPin className="h-4 w-4" />
               </div>
@@ -197,7 +198,7 @@ export const TeamPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,184,0,0.12)', color: 'var(--gold)' }}
+                style={{ background: 'rgba(230,185,74,0.12)', color: 'var(--gold)' }}
               >
                 <Building2 className="h-4 w-4" />
               </div>
@@ -243,8 +244,30 @@ export const TeamPage = () => {
               <span className="font-mono text-xs uppercase text-[var(--text-3)]">
                 {displayPlayers.length} в составе
               </span>
+              {/* Scroll controls — the roster is a horizontal rail; without
+                  visible arrows there was no obvious way to page through it. */}
+              <div className="ml-auto flex gap-2">
+                <button
+                  className="btn btn-icon"
+                  onClick={() => rosterRef.current?.scrollBy({ left: -360, behavior: 'smooth' })}
+                  aria-label="Назад"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  className="btn btn-icon"
+                  onClick={() => rosterRef.current?.scrollBy({ left: 360, behavior: 'smooth' })}
+                  aria-label="Вперёд"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <div className="flex gap-5 overflow-x-auto pb-2 no-scrollbar">
+            <div
+              ref={rosterRef}
+              className="flex gap-5 overflow-x-auto pb-2 no-scrollbar"
+              style={{ scrollSnapType: 'x mandatory', scrollBehavior: 'smooth' }}
+            >
               {displayPlayers.map((p, i) => (
                 <PlayerCard key={p.id} player={p} highlight={i === 0} />
               ))}

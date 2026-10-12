@@ -1,4 +1,4 @@
-"""Home / dashboard data controller — aggregates featured content for the landing page."""
+"""Контроллер главной страницы: собирает избранные данные для панели сайта."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -16,23 +16,23 @@ logger = logging.getLogger(__name__)
 
 @router.get("/summary")
 async def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """One-shot landing page payload: featured match, top teams, top players, headline stats."""
+    """Возвращает данные главной страницы: матч, лучшие команды и игроки, основные показатели."""
     try:
         match_service = MatchService(db)
         team_service = TeamService(db)
         player_service = PlayerService(db)
 
-        # Featured: pick the most recent upcoming match, fall back to recent finished
+        # Выбираем ближайший предстоящий матч, а если его нет — последний завершённый
         all_matches = match_service.get_all_matches(filters={}, skip=0, limit=20)
         upcoming = [m for m in all_matches if m.get("status") != "finished"]
         finished = [m for m in all_matches if m.get("status") == "finished"]
         featured_match = (upcoming[0] if upcoming else (finished[0] if finished else None))
 
-        # Top teams by wins
+        # Лучшие команды по числу побед
         all_teams = team_service.get_all_teams(skip=0, limit=200)
         top_teams = sorted(all_teams, key=lambda t: (t.get("wins", 0) or 0), reverse=True)[:6]
 
-        # Top players (scoring leaders)
+        # Лучшие игроки по набранным очкам
         try:
             top_players = player_service.get_all_players(
                 team_abbrev=None,
@@ -75,7 +75,7 @@ async def get_leaderboard(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    """League leaderboard for the given category — points, rebounds, assists."""
+    """Рейтинг игроков лиги по выбранной категории: очки, подборы или передачи."""
     if category not in ("pts", "reb", "ast", "stl", "blk"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -103,7 +103,7 @@ async def search_global(
     q: str = Query(..., min_length=2, description="Search term"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Global search across teams and players."""
+    """Глобальный поиск по командам и игрокам."""
     try:
         team_service = TeamService(db)
         player_service = PlayerService(db)

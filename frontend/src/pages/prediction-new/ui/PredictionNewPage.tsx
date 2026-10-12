@@ -66,7 +66,7 @@ export const PredictionNewPage = () => {
           <div className="card mx-auto max-w-2xl p-10 text-center sm:p-14">
             <div
               className="mx-auto flex h-14 w-14 items-center justify-center rounded-md"
-              style={{ background: 'rgba(255,90,31,0.15)', color: 'var(--accent)' }}
+              style={{ background: 'rgba(210,106,52,0.15)', color: 'var(--accent)' }}
             >
               <Lock className="h-6 w-6" />
             </div>
@@ -105,7 +105,7 @@ export const PredictionNewPage = () => {
       <div className="container-x">
         <div className="section-head">
           <div className="flex flex-col gap-3">
-            <span className="eyebrow"><span className="dot" />MODEL ENGINE · MATCHUP</span>
+            <span className="eyebrow"><span className="dot" />МОДЕЛЬ · МАТЧАП</span>
             <h2>
               СОБЕРИ <em>МАТЧАП</em>.<br />ПОЛУЧИ ОЦЕНКУ.
             </h2>
@@ -131,8 +131,8 @@ export const PredictionNewPage = () => {
             <div
               className="flex h-16 w-16 items-center justify-center rounded-md"
               style={{
-                background: 'rgba(255,90,31,0.10)',
-                border: '1px solid rgba(255,90,31,0.30)',
+                background: 'rgba(210,106,52,0.10)',
+                border: '1px solid rgba(210,106,52,0.30)',
                 color: 'var(--accent)',
               }}
             >
@@ -171,7 +171,7 @@ export const PredictionNewPage = () => {
           className="card mt-10 overflow-hidden p-8 sm:p-10"
           style={{
             background:
-              'linear-gradient(120deg, rgba(255,90,31,0.10), transparent 50%), linear-gradient(240deg, rgba(255,184,0,0.06), transparent 60%), var(--surface)',
+              'linear-gradient(120deg, rgba(210,106,52,0.10), transparent 50%), linear-gradient(240deg, rgba(230,185,74,0.06), transparent 60%), var(--surface)',
           }}
         >
           <div className="grid items-end gap-8 lg:grid-cols-[1fr_auto]">

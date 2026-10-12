@@ -124,12 +124,12 @@ class MatchService:
 
     def create_match(self, match_data, user_id: int) -> Dict[str, Any]:
         """Создание нового матча"""
-        raise NotImplementedError("Метод create_match еще не реализован")
+        raise NotImplementedError("create_match is not implemented yet")
 
     def update_match_result(self, match_id: int, home_score: int, away_score: int, user_id: int) -> Dict[str, Any]:
         """Обновление результата матча"""
-        raise NotImplementedError("Метод update_match_result еще не реализован")
+        raise NotImplementedError("update_match_result is not implemented yet")
 
     def delete_match(self, match_id: int, user_id: int) -> Dict[str, Any]:
         """Удаление матча"""
-        raise NotImplementedError("Метод delete_match еще не реализован")
+        raise NotImplementedError("delete_match is not implemented yet")

@@ -14,6 +14,7 @@ class ModelMetricsService:
     def _create_table_if_not_exists(self):
         pass
 
+    # Сохраняет метрики модели в базу данных
     def save_metrics(self, model_version: str, training_games_count: int = None,
                      accuracy: float = None, loss: float = None,
                      validation_accuracy: float = None, validation_loss: float = None,
@@ -34,11 +35,14 @@ class ModelMetricsService:
             metadata=metadata
         )
 
+    # Получает последние сохраненные метрики
     def get_latest_metrics(self) -> Optional[Dict[str, Any]]:
         return self.metrics_repo.get_latest()
 
+    # Получает историю метрик с ограничением по количеству
     def get_metrics_history(self, limit: int = 10) -> List[Dict[str, Any]]:
         return self.metrics_repo.get_history(limit=limit)
 
+    # Получает статистику по модели
     def get_model_stats(self) -> Dict[str, Any]:
         return self.metrics_repo.get_stats()

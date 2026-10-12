@@ -4,13 +4,13 @@ from repositories.base_repository import BaseRepository
 
 
 class PlayerRepository(BaseRepository):
-    """Репозиторий для работы с таблицами players и common_player_info"""
+    # Репозиторий для работы с таблицами players и common_player_info
 
     def __init__(self, db: Session):
         super().__init__(db)
 
+    # Проверка существования таблицы common_player_info
     def check_common_player_info_exists(self) -> bool:
-        """Опционально таблица common_player_info — даёт position + nba person_id."""
         query = """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
@@ -19,12 +19,11 @@ class PlayerRepository(BaseRepository):
         """
         return bool(self._fetch_scalar(query))
 
+    # Получение всех игроков с фильтрацией и сортировкой
     def get_all(self, team_abbrev: str = None, season: str = None, search: str = None,
                 min_games: int = 5, sort_by: str = 'pts', sort_order: str = 'desc',
                 skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
 
-        # If common_player_info is present we LEFT JOIN it for c.position +
-        # c.person_id (real NBA id, drives cdn.nba.com headshots on the frontend).
         has_common = self.check_common_player_info_exists()
         position_select = (
             "c.position, c.person_id as nba_person_id"
@@ -99,6 +98,7 @@ class PlayerRepository(BaseRepository):
 
         return self._fetch_all(query, params)
 
+    # Получение игрока по ID
     def get_by_id(self, player_id: int) -> Optional[Dict[str, Any]]:
         query = """
             SELECT player_name FROM players WHERE id = :player_id
@@ -147,14 +147,17 @@ class PlayerRepository(BaseRepository):
         """
         return self._fetch_one(query_all, {"player_name": player_name})
 
+    # Получение игроков по команде
     def get_by_team(self, team_abbrev: str) -> List[Dict[str, Any]]:
         return self.get_all(team_abbrev=team_abbrev)
 
+    # Получение списка доступных сезонов
     def get_seasons(self) -> List[str]:
         query = "SELECT DISTINCT season FROM players ORDER BY season DESC"
         results = self._fetch_all(query)
         return [r["season"] for r in results if r["season"]]
 
+    # Получение топ-игроков по категории
     def get_top(self, category: str = 'pts', min_games: int = 10, limit: int = 50) -> List[Dict[str, Any]]:
         valid = ['pts', 'reb', 'ast', 'net_rating']
         if category not in valid:
@@ -178,8 +181,8 @@ class PlayerRepository(BaseRepository):
         results.sort(key=lambda x: x.get("value", 0), reverse=True)
         return results[:limit]
 
+    # Получение всех сезонов игрока по имени (без позиции)
     def get_all_by_name(self, player_name: str) -> List[Dict[str, Any]]:
-        """Каждая запись = один сезон для игрока (без position)."""
         query = """
             SELECT
                 p.id, p.player_name, p.team_abbreviation,
@@ -209,8 +212,8 @@ class PlayerRepository(BaseRepository):
         """
         return self._fetch_all(query, {"name": player_name})
 
+    # Получение всех сезонов игрока по имени (с позицией)
     def get_all_by_name_with_position(self, player_name: str) -> List[Dict[str, Any]]:
-        """Каждая запись = один сезон для игрока (включая position + nba person_id)."""
         query = """
             SELECT
                 p.id, p.player_name, p.team_abbreviation,
@@ -242,6 +245,7 @@ class PlayerRepository(BaseRepository):
         """
         return self._fetch_all(query, {"name": player_name})
 
+    # Общее количество игроков
     def count(self) -> int:
         query = "SELECT COUNT(*) FROM players"
         return self._fetch_scalar(query) or 0

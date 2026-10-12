@@ -37,12 +37,14 @@ class AIService:
         }
 
         # Загружаем модель если есть
+
         self.model = None
         self.scaler = None
         self.team_emas = {}
         self.load_model()
 
         # Создаем таблицу для предсказаний если нет
+
         self._create_predictions_table()
 
     def _create_predictions_table(self):
@@ -70,7 +72,9 @@ class AIService:
             self.db.rollback()
 
     def load_model(self):
+
         # Загрузка обученной модели
+
         model_path = os.path.join(MODEL_DIR, "model.h5")
         scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
         emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
@@ -87,6 +91,90 @@ class AIService:
             except Exception as e:
                 print(f"AI Service: ошибка загрузки модели: {e}")
 
+    async def compute_preview(self, team1_id: int, team2_id: int) -> Dict[str, Any]:
+        team1 = await self._get_team_info(team1_id)
+        team2 = await self._get_team_info(team2_id)
+        if not team1 or not team2:
+            raise ValueError("One of the teams was not found")
+
+        # Используем нейросетевую модель, если она доступна
+        if self.model is not None and self.scaler is not None and self.team_emas:
+            try:
+                home_id, away_id = str(team1_id), str(team2_id)
+                if home_id in self.team_emas and away_id in self.team_emas:
+                    home_ema = self.team_emas[home_id]
+                    away_ema = self.team_emas[away_id]
+                    STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf',
+                             'fg_pct', 'fg3_pct', 'ft_pct']
+                    feat = [home_ema.get(s, 110) for s in STATS] + \
+                           [away_ema.get(s, 110) for s in STATS]
+                    feat_scaled = self.scaler.transform(np.array(feat).reshape(1, -1))
+                    prob = float(self.model.predict(feat_scaled, verbose=0)[0][0])
+                    prob1 = prob * 100
+                    return {
+                        "team1Id": team1_id,
+                        "team2Id": team2_id,
+                        "probabilityTeam1": round(prob1, 1),
+                        "probabilityTeam2": round(100 - prob1, 1),
+                        "confidence": round(min(95, 70 + abs(prob1 - 50)), 1),
+                        "modelVersion": "model-v1",
+                    }
+            except Exception as e:
+                print(f"preview neural failed, falling back to statistical: {e}")
+
+        # Резервный статистический расчёт с теми же коэффициентами, что и _predict_statistical
+        try:
+            t1_stats = self.get_team_stats_by_season(team1_id)
+            t2_stats = self.get_team_stats_by_season(team2_id)
+            t1_hist = self._get_team_history(team1_id, 20)
+            t2_hist = self._get_team_history(team2_id, 20)
+            h2h = self._get_head_to_head(team1_id, team2_id, 10)
+            t1_wr = self._calculate_win_rate(team1_id, t1_hist)
+            t2_wr = self._calculate_win_rate(team2_id, t2_hist)
+            h2h_factor = self._calculate_head_to_head_factor(h2h, team1_id) if h2h else 0.5
+            t1_form = self._calculate_recent_form(team1_id, t1_hist[:5])
+            t2_form = self._calculate_recent_form(team2_id, t2_hist[:5])
+            form_factor = t1_form / (t1_form + t2_form) if (t1_form + t2_form) > 0 else 0.5
+
+            if t1_stats and t2_stats:
+                off_f = t1_stats.get('pts_pg', 110) / (
+                    t1_stats.get('pts_pg', 110) + t2_stats.get('opp_pts_pg', 110))
+                def_f = t2_stats.get('opp_pts_pg', 110) / (
+                    t1_stats.get('opp_pts_pg', 110) + t2_stats.get('opp_pts_pg', 110))
+                strength = (off_f + def_f) / 2
+            else:
+                strength = 0.5
+
+            prob1 = (t1_wr * 0.3 + 0.55 * 0.2 + h2h_factor * 0.15 +
+                     form_factor * 0.2 + strength * 0.15) * 100
+            prob1 = max(0, min(100, prob1))
+            return {
+                "team1Id": team1_id,
+                "team2Id": team2_id,
+                "probabilityTeam1": round(prob1, 1),
+                "probabilityTeam2": round(100 - prob1, 1),
+                "confidence": round(70 + min(20, abs(prob1 - 50) / 2), 1),
+                "modelVersion": "statistical-v1",
+            }
+        except Exception as e:
+            print(f"preview statistical failed: {e}")
+            # Последний резервный вариант — вероятность 50/50 по результатам команд
+            w1 = (team1.get("wins") or 0)
+            l1 = (team1.get("losses") or 0)
+            w2 = (team2.get("wins") or 0)
+            l2 = (team2.get("losses") or 0)
+            r1 = w1 / max(1, w1 + l1)
+            r2 = w2 / max(1, w2 + l2)
+            prob1 = (r1 * 0.55 + 0.5 * 0.45 + (r1 / (r1 + r2) if (r1 + r2) > 0 else 0.5) * 0.0) * 100
+            return {
+                "team1Id": team1_id,
+                "team2Id": team2_id,
+                "probabilityTeam1": round(prob1, 1),
+                "probabilityTeam2": round(100 - prob1, 1),
+                "confidence": 60.0,
+                "modelVersion": "records-only",
+            }
+
     async def predict_match(self, team1_id: int, team2_id: int, user_id: int) -> Dict[str, Any]:
         print(f"AI предсказание: Команда {team1_id} vs Команда {team2_id}")
 
@@ -95,7 +183,7 @@ class AIService:
         team2 = await self._get_team_info(team2_id)
 
         if not team1 or not team2:
-            raise ValueError("Одна из команд не найдена в базе данных")
+            raise ValueError("One of the teams was not found in the database")
 
         # Если есть загруженная модель, используем её
         if self.model is not None and self.scaler is not None and self.team_emas:
@@ -280,31 +368,33 @@ class AIService:
         return self.game_repo.get_head_to_head(team1_id, team2_id, limit=limit)
 
     def _calculate_win_rate(self, team_id: int, history: List[Dict]) -> float:
+        team_id = str(team_id)
         if not history:
             return 0.5
 
         wins = 0
         for match in history:
-            if match["team_id_home"] == team_id:
+            if str(match["team_id_home"]) == team_id:
                 if match.get("wl_home") == "W":
                     wins += 1
-            elif match["team_id_away"] == team_id:
+            elif str(match["team_id_away"]) == team_id:
                 if match.get("wl_away") == "W":
                     wins += 1
 
         return wins / len(history)
 
     def _calculate_recent_form(self, team_id: str, recent_matches: List[Dict]) -> float:
+        team_id = str(team_id)
         if not recent_matches:
             return 0.5
 
         total_score = 0
         for i, match in enumerate(recent_matches):
             weight = 1.0 - (i * 0.1)
-            if match.get("team_id_home") == team_id:
+            if str(match.get("team_id_home")) == team_id:
                 if match.get("wl_home") == "W":
                     total_score += 1.0 * weight
-            elif match.get("team_id_away") == team_id:
+            elif str(match.get("team_id_away")) == team_id:
                 if match.get("wl_away") == "W":
                     total_score += 1.0 * weight
 
@@ -312,15 +402,16 @@ class AIService:
         return total_score / max_possible if max_possible > 0 else 0.5
 
     def _calculate_head_to_head_factor(self, head_to_head: List[Dict], team1_id: str) -> float:
+        team1_id = str(team1_id)
         if not head_to_head:
             return 0.5
 
         team1_wins = 0
         for match in head_to_head:
-            if match.get("team_id_home") == team1_id:
+            if str(match.get("team_id_home")) == team1_id:
                 if match.get("wl_home") == "W":
                     team1_wins += 1
-            elif match.get("team_id_away") == team1_id:
+            elif str(match.get("team_id_away")) == team1_id:
                 if match.get("wl_away") == "W":
                     team1_wins += 1
 

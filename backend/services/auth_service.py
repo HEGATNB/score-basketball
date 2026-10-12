@@ -85,14 +85,13 @@ class AuthService:
 
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            # Хешируем пароль
+            # Хеширование пароль
             password_hash = get_password_hash(user_data["password"])
             print(f"Создан хеш пароля: {password_hash[:20]}...")
 
-            # Определяем username
             username = user_data.get("username") or user_data.get("name") or user_data["email"].split('@')[0]
 
-            # Создаем пользователя через репозиторий
+            # Создание пользователя через репозиторий
             user = self.user_repo.create(
                 email=user_data["email"],
                 name=user_data.get("name", username),
@@ -108,41 +107,38 @@ class AuthService:
             print(f"Ошибка создания пользователя: {e}")
             raise
 
-    def init_database(self) -> Dict[str, Any]:
-        # Инициализация тестовые пользователи
-        created_users = []
+    def update_profile(self, user_id: int, name: Optional[str] = None,
+                       username: Optional[str] = None,
+                       email: Optional[str] = None) -> Dict[str, Any]:
+        if email is not None:
+            email = email.strip().lower()
+            if not email or "@" not in email:
+                raise ValueError("Invalid email")
+            if self.user_repo.email_exists(email, except_user_id=user_id):
+                raise ValueError("This email is already in use")
+        if username is not None:
+            username = username.strip()
+            if not username:
+                raise ValueError("Username cannot be empty")
+            if self.user_repo.username_exists(username, except_user_id=user_id):
+                raise ValueError("This username is already taken")
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise ValueError("Name cannot be empty")
+        updated = self.user_repo.update_profile(user_id, name=name, username=username, email=email)
+        if not updated:
+            raise ValueError("User was not found")
+        return updated
 
-        test_users = [
-            {"email": "admin@sys.com", "name": "Admin", "username": "admin", "password": "admin", "role": "admin"},
-            {"email": "operator@sys.com", "name": "Operator", "username": "operator", "password": "operator",
-             "role": "operator"},
-            {"email": "user@sys.com", "name": "User", "username": "user", "password": "user", "role": "user"},
-        ]
-
-        for user_data in test_users:
-            try:
-                # Проверяем, существует ли пользователь
-                existing = self.get_user_by_email(user_data["email"])
-                if existing:
-                    print(f"Пользователь {user_data['email']} уже существует")
-                    created_users.append(user_data["email"])
-                    continue
-
-                # Создание пользователя
-                password_hash = get_password_hash(user_data["password"])
-
-                self.user_repo.create(
-                    email=user_data["email"],
-                    name=user_data["name"],
-                    username=user_data["username"],
-                    password_hash=password_hash,
-                    role=user_data["role"]
-                )
-
-                created_users.append(user_data["email"])
-                print(f"Создан тестовый пользователь: {user_data['email']}")
-
-            except Exception as e:
-                print(f"Ошибка создания {user_data['email']}: {e}")
-
-        return {"created_users": created_users}
+    def change_password(self, user_id: int, current_password: str, new_password: str) -> bool:
+        if not new_password or len(new_password) < 4:
+            raise ValueError("New password must be at least 4 characters long")
+        current_hash = self.user_repo.get_password_hash(user_id)
+        if not current_hash:
+            raise ValueError("User was not found")
+        if not verify_password(current_password, current_hash):
+            raise ValueError("Current password is incorrect")
+        new_hash = get_password_hash(new_password)
+        self.user_repo.update_password(user_id, new_hash)
+        return True

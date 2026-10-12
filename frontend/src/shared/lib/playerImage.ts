@@ -1,65 +1,56 @@
 import type { Player } from '@/shared/api/client';
-import { getNbaPersonId } from './nbaIds';
+import { getEspnPlayerId, getNbaPersonId } from './nbaIds';
 
 /**
- * Build a list of candidate headshot URLs for a player, ordered from
- * highest to lowest quality. The component tries them sequentially via
- * onError, falling back to a coloured initials avatar.
+ * Build ordered player headshot candidates.
  *
- * Sources, in priority order:
- *   1. Manually-set image_url (if any)
- *   2. NBA CDN with real person_id from our hardcoded star map (HD 1040×760)
- *   3. NBA CDN with backend-provided nba_person_id (may not be a real NBA id
- *      if the local common_player_info dump uses synthetic ids)
- *   4. cdn.ssref.net (basketball-reference CDN) — better quality than legacy
- *   5. Legacy basketball-reference.com path (low-quality jpg, last resort)
- */
-export function getPlayerImageCandidates(player: Player): string[] {
+ * Priority:
+ *   1. manually supplied image_url
+ *   2. curated ESPN PNG headshot
+ *   3. NBA CDN HD fallback for large cards only when ESPN is unknown
+ *
+ * We intentionally do not use Basketball Reference headshots here: many of
+ * them have white backgrounds and make the premium dark cards look broken.
+ */export interface PlayerImageOptions {
+  /** Small contexts (row avatars, 56px) → fetch the light 260×190 thumb first.
+   *  Default false → big magazine cards get the crisp 1040×760 headshot. */
+  thumb?: boolean;
+}
+
+export function getPlayerImageCandidates(player: Player, opts: PlayerImageOptions = {}): string[] {
   const out: string[] = [];
 
   if (player.image_url) out.push(player.image_url);
 
-  // 1. Try our curated NBA person_id map — this is the most reliable source
-  //    for active stars.
+  // NBA CDN is only a last-resort large-card fallback; row avatars avoid it.
+  const sizes = opts.thumb ? ['260x190', '1040x760'] : ['1040x760'];
+  const cdn = (id: number) => sizes.map((s) => `https://cdn.nba.com/headshots/nba/latest/${s}/${id}.png`);
+
+  // ESPN is the primary source: stable PNGs with clean card-friendly backgrounds.
   const fullName =
     player.full_name?.toLowerCase() ||
     `${player.first_name || ''} ${player.last_name || ''}`.toLowerCase().trim();
-  const knownId = getNbaPersonId(fullName);
-  if (knownId) {
-    out.push(`https://cdn.nba.com/headshots/nba/latest/1040x760/${knownId}.png`);
-    out.push(`https://cdn.nba.com/headshots/nba/latest/260x190/${knownId}.png`);
-  }
+
+  const espnId = getEspnPlayerId(fullName);
+  if (espnId) out.push(`https://a.espncdn.com/i/headshots/nba/players/full/${espnId}.png`);
+
+  const knownId = espnId ? null : getNbaPersonId(fullName);
+  if (knownId && !opts.thumb) out.push(...cdn(knownId));
 
   // 2. Backend-provided NBA person_id. Only useful if the local dump's
   //    common_player_info table stores real NBA IDs (which it might not).
   const nbaId = player.nba_person_id;
-  if (typeof nbaId === 'number' && nbaId > 0 && nbaId !== knownId) {
-    out.push(`https://cdn.nba.com/headshots/nba/latest/1040x760/${nbaId}.png`);
-    out.push(`https://cdn.nba.com/headshots/nba/latest/260x190/${nbaId}.png`);
-  }
+  if (!espnId && !opts.thumb && typeof nbaId === 'number' && nbaId > 0 && nbaId !== knownId) out.push(...cdn(nbaId));
 
   // 3. Long player.id values look like NBA person_ids — try them as well.
+  //    (A miss just 404s and we fall through to the clean initials avatar.)
   const fallbackId = player.id;
-  if (fallbackId && fallbackId > 1000000 && fallbackId !== nbaId && fallbackId !== knownId) {
-    out.push(`https://cdn.nba.com/headshots/nba/latest/1040x760/${fallbackId}.png`);
-    out.push(`https://cdn.nba.com/headshots/nba/latest/260x190/${fallbackId}.png`);
+  if (!espnId && !opts.thumb && fallbackId && fallbackId > 1000000 && fallbackId !== nbaId && fallbackId !== knownId) {
+    out.push(...cdn(fallbackId));
   }
 
-  // 4. basketball-reference style URLs — derived from name slices.
-  const firstName = player.first_name?.toLowerCase().replace(/[^a-z]/g, '') || '';
-  const lastName = player.last_name?.toLowerCase().replace(/[^a-z]/g, '') || '';
-  if (lastName && firstName) {
-    const lastNamePart = lastName.slice(0, 5);
-    const firstNamePart = firstName.slice(0, 2);
-    out.push(
-      `https://www.basketball-reference.com/req/202503171/images/headshots/${lastNamePart}${firstNamePart}01.jpg`,
-    );
-    out.push(
-      `https://www.basketball-reference.com/req/202503171/images/players/${lastNamePart}${firstNamePart}01.jpg`,
-    );
-  }
+  return Array.from(new Set(out));
 
-  return out;
 }
 
 export function getPlayerInitials(player: Player): string {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarRange, Trophy, Radio, Clock, Flame } from 'lucide-react';
 import { apiRequest, type Match } from '@/shared/api/client';
+import { useT } from '@/shared/i18n';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 import { MatchCard } from '@/shared/ui/MatchCard';
 import { liveApi, type LiveEvent } from '@/shared/api/live';
@@ -38,15 +39,17 @@ function formatClock(e: LiveEvent): string {
       return 'TIP';
     }
   }
-  return e.shortDetail || 'FINAL';
+  return e.shortDetail || 'ОКОНЧЕН';
 }
 
 export const MatchesPage = () => {
   const navigate = useNavigate();
+  const t = useT();
   const [matches, setMatches] = useState<Match[]>([]);
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterMode>('all');
+  const [aiByMatch, setAiByMatch] = useState<Record<number, { a: number; b: number }>>({});
 
   useEffect(() => {
     apiRequest<Match[]>('/matches')
@@ -60,6 +63,37 @@ export const MatchesPage = () => {
       .catch(() => setLiveEvents([]));
   }, []);
 
+  // Pre-fetch real AI probabilities for the first 18 scheduled matches.
+  // /predict/preview is read-only, no auth, no DB writes.
+  useEffect(() => {
+    if (matches.length === 0) return;
+    const targets = matches
+      .filter((m) => m.status !== 'finished')
+      .slice(0, 18)
+      .filter((m) => m.homeTeam?.id && m.awayTeam?.id);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      targets.map((m) =>
+        apiRequest<{ probabilityTeam1: number; probabilityTeam2: number }>(
+          `/predict/preview?team1=${m.homeTeam.id}&team2=${m.awayTeam.id}`,
+          undefined,
+          false,
+        )
+          .then((p) => [m.id, { a: Math.round(p.probabilityTeam1), b: Math.round(p.probabilityTeam2) }] as const)
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const map: Record<number, { a: number; b: number }> = {};
+      for (const r of results) if (r) map[r[0]] = r[1];
+      if (Object.keys(map).length > 0) setAiByMatch((prev) => ({ ...prev, ...map }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [matches]);
+
   const filtered = useMemo(() => {
     if (filter === 'all') return matches;
     if (filter === 'live') return []; // live tab uses ESPN events instead
@@ -67,14 +101,12 @@ export const MatchesPage = () => {
   }, [filter, matches]);
 
   const grouped = useMemo(() => groupByDay(filtered), [filtered]);
-  const finishedCount = matches.filter((m) => m.status === 'finished').length;
-  const scheduledCount = matches.filter((m) => m.status === 'scheduled').length;
   const liveCount = liveEvents.filter((e) => e.state === 'in').length;
 
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <LoadingSpinner size="md" label="Загружаем матчи" />
+        <LoadingSpinner size="md" label={t('matches.loading')} />
       </div>
     );
   }
@@ -86,16 +118,15 @@ export const MatchesPage = () => {
           <div className="flex flex-col gap-3">
             <span className="eyebrow">
               <span className="dot" />
-              КАЛЕНДАРЬ · {matches.length} МАТЧЕЙ
+              {t('matches.eyebrow')} · {matches.length} {t('common.games')}
             </span>
             <h2>
-              МАТЧИ <em>NBA</em>.<br />
-              РАСПИСАНИЕ И ИТОГИ.
+              {t('matches.h2a')} <em>NBA</em>.<br />
+              {t('matches.h2b')}
             </h2>
           </div>
           <p className="lead">
-            База матчей, live-окно ESPN и архив результатов в одном экране. Открой матч,
-            чтобы перейти к подробному разбору.
+            {t('matches.lead')}
           </p>
         </div>
 
@@ -107,7 +138,7 @@ export const MatchesPage = () => {
               borderColor: liveCount > 0 ? 'rgba(255,56,88,0.4)' : 'var(--line)',
               background:
                 liveCount > 0
-                  ? 'linear-gradient(135deg, rgba(255,56,88,0.10), rgba(255,90,31,0.04))'
+                  ? 'linear-gradient(135deg, rgba(255,56,88,0.10), rgba(210,106,52,0.04))'
                   : 'var(--surface)',
             }}
           >
@@ -119,7 +150,7 @@ export const MatchesPage = () => {
                     style={{ letterSpacing: '0.22em', color: 'var(--danger)' }}
                   >
                     <span className="pulse-dot" />
-                    LIVE СЕЙЧАС · {liveCount}
+                    {t('matches.live.now')} · {liveCount}
                   </span>
                 ) : (
                   <span
@@ -127,7 +158,7 @@ export const MatchesPage = () => {
                     style={{ letterSpacing: '0.22em', color: 'var(--accent)' }}
                   >
                     <Clock className="h-3 w-3" />
-                    СЕГОДНЯ В РАСПИСАНИИ · {liveEvents.length}
+                    {t('matches.live.today')} · {liveEvents.length}
                   </span>
                 )}
               </div>
@@ -135,7 +166,7 @@ export const MatchesPage = () => {
                 className="font-mono text-[10px] uppercase text-[var(--text-3)]"
                 style={{ letterSpacing: '0.18em' }}
               >
-                ESPN · обновление каждые 30 сек
+                {t('matches.live.espn')}
               </span>
             </div>
             <div className="grid divide-x divide-[var(--line)] sm:grid-cols-2 lg:grid-cols-3">
@@ -231,68 +262,15 @@ export const MatchesPage = () => {
           </div>
         )}
 
-        {/* Stats band */}
-        <div
-          className="mb-8 grid overflow-hidden rounded-lg border border-[var(--line)]"
-          style={{ gap: 1, background: 'var(--line)', gridTemplateColumns: 'repeat(4, 1fr)' }}
-        >
-          <div className="bg-[var(--surface)] p-5">
-            <div
-              className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-              style={{ letterSpacing: '0.16em' }}
-            >
-              Всего в БД
-            </div>
-            <div className="font-display text-3xl tab-num">{matches.length}</div>
-          </div>
-          <div className="bg-[var(--surface)] p-5">
-            <div
-              className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-              style={{ letterSpacing: '0.16em' }}
-            >
-              Live
-            </div>
-            <div
-              className="flex items-center gap-2 font-display text-3xl tab-num"
-              style={{ color: liveCount > 0 ? 'var(--danger)' : 'var(--text-3)' }}
-            >
-              {liveCount}
-              {liveCount > 0 && <span className="pulse-dot" />}
-            </div>
-          </div>
-          <div className="bg-[var(--surface)] p-5">
-            <div
-              className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-              style={{ letterSpacing: '0.16em' }}
-            >
-              Сыграно
-            </div>
-            <div className="font-display text-3xl tab-num" style={{ color: 'var(--ok)' }}>
-              {finishedCount}
-            </div>
-          </div>
-          <div className="bg-[var(--surface)] p-5">
-            <div
-              className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
-              style={{ letterSpacing: '0.16em' }}
-            >
-              В ожидании
-            </div>
-            <div className="font-display text-3xl tab-num" style={{ color: 'var(--accent)' }}>
-              {scheduledCount}
-            </div>
-          </div>
-        </div>
-
         {/* Filter pills */}
         <div className="mb-8 flex items-center justify-between gap-3">
           <div className="flex gap-1.5 rounded-pill border border-[var(--line)] bg-[var(--surface)] p-1">
             {(
               [
-                ['all', 'Все', null],
-                ['live', 'Live', <Radio key="r" className="h-3 w-3" />],
-                ['scheduled', 'Предстоящие', null],
-                ['finished', 'Сыгранные', null],
+                ['all', t('matches.filter.all'), null],
+                ['live', t('matches.filter.live'), <Radio key="r" className="h-3 w-3" />],
+                ['scheduled', t('matches.filter.scheduled'), null],
+                ['finished', t('matches.filter.finished'), null],
               ] as Array<[FilterMode, string, React.ReactNode]>
             ).map(([v, label, icon]) => (
               <button
@@ -300,7 +278,7 @@ export const MatchesPage = () => {
                 onClick={() => setFilter(v)}
                 className={`flex items-center gap-1.5 rounded-pill px-4 py-2 text-xs font-semibold transition ${
                   filter === v
-                    ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                    ? 'bg-[var(--accent)] text-white'
                     : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                 }`}
               >
@@ -311,7 +289,7 @@ export const MatchesPage = () => {
           </div>
           <span className="tag">
             <CalendarRange className="h-3 w-3" />{' '}
-            {filter === 'live' ? liveEvents.length : filtered.length} игр
+            {filter === 'live' ? liveEvents.length : filtered.length} {t('common.gamesShort')}
           </span>
         </div>
 
@@ -319,9 +297,9 @@ export const MatchesPage = () => {
           liveEvents.length === 0 ? (
             <div className="card p-16 text-center">
               <Radio className="mx-auto h-10 w-10 text-[var(--text-3)]" />
-              <div className="mt-4 font-display text-3xl uppercase">Сегодня матчей нет</div>
+              <div className="mt-4 font-display text-3xl uppercase">{t('matches.empty.noLive')}</div>
               <p className="mt-2 text-sm text-[var(--text-3)]">
-                Проверь "Предстоящие" — там календарь следующих игр.
+                {t('matches.empty.checkUpcoming')}
               </p>
             </div>
           ) : (
@@ -428,28 +406,15 @@ export const MatchesPage = () => {
         ) : filtered.length === 0 ? (
           <div className="card p-16 text-center">
             <Trophy className="mx-auto h-10 w-10 text-[var(--text-3)]" />
-            <div className="mt-4 font-display text-3xl uppercase">Нет матчей по фильтру</div>
-            <p className="mt-2 text-sm text-[var(--text-3)]">Смени фильтр.</p>
+            <div className="mt-4 font-display text-3xl uppercase">{t('matches.empty.noFilter')}</div>
+            <p className="mt-2 text-sm text-[var(--text-3)]">{t('matches.empty.changeFilter')}</p>
           </div>
         ) : (
           <div className="space-y-10">
             {grouped.map(([day, items]) => {
               const allFinished = items.every((m) => m.status === 'finished');
-              // Day stats
               const totalGames = items.length;
               const finishedItems = items.filter((m) => m.status === 'finished');
-              const avgTotal = finishedItems.length
-                ? Math.round(
-                    finishedItems.reduce(
-                      (s, m) => s + ((m.homeScore || 0) + (m.awayScore || 0)),
-                      0,
-                    ) / finishedItems.length,
-                  )
-                : null;
-              const biggestMargin = finishedItems.reduce((best, m) => {
-                const margin = Math.abs((m.homeScore || 0) - (m.awayScore || 0));
-                return margin > best ? margin : best;
-              }, 0);
               // Parse short date for big display
               let dayNum = '';
               let dayMonth = '';
@@ -476,37 +441,16 @@ export const MatchesPage = () => {
 
                     <div className="day-stats">
                       <div className="day-stat">
-                        <div className="lbl">МАТЧЕЙ</div>
+                        <div className="lbl">{t('matches.day.games')}</div>
                         <div className="val">{totalGames}</div>
                       </div>
                       {finishedItems.length > 0 && (
-                        <>
-                          <div className="day-stat">
-                            <div className="lbl">СЫГРАНО</div>
-                            <div className="val" style={{ color: 'var(--ok)' }}>
-                              {finishedItems.length}
-                            </div>
+                        <div className="day-stat">
+                          <div className="lbl">{t('matches.day.played')}</div>
+                          <div className="val" style={{ color: 'var(--ok)' }}>
+                            {finishedItems.length}
                           </div>
-                          {avgTotal != null && (
-                            <div className="day-stat">
-                              <div className="lbl">СРЕДНИЙ ТОТАЛ</div>
-                              <div className="val">{avgTotal}</div>
-                            </div>
-                          )}
-                          {biggestMargin > 0 && (
-                            <div className="day-stat">
-                              <div className="lbl">МАКС. РАЗРЫВ</div>
-                              <div
-                                className="val"
-                                style={{
-                                  color: biggestMargin >= 20 ? 'var(--accent)' : 'var(--text)',
-                                }}
-                              >
-                                +{biggestMargin}
-                              </div>
-                            </div>
-                          )}
-                        </>
+                        </div>
                       )}
                     </div>
 
@@ -517,14 +461,19 @@ export const MatchesPage = () => {
                         ) : (
                           <Flame className="h-3 w-3" />
                         )}
-                        {allFinished ? 'Завершено' : 'Идёт игра'}
+                        {allFinished ? t('matches.day.finished') : t('matches.day.live')}
                       </span>
                     </div>
                   </aside>
 
                   <div className="day-grid">
                     {items.map((m) => (
-                      <MatchCard key={m.id} match={m} />
+                      <MatchCard
+                        key={m.id}
+                        match={m}
+                        aiHome={aiByMatch[m.id]?.a}
+                        aiAway={aiByMatch[m.id]?.b}
+                      />
                     ))}
                   </div>
                 </article>

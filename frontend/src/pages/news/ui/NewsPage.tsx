@@ -131,7 +131,7 @@ export const NewsPage = () => {
                 onClick={() => setCategory('all')}
                 className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                   category === 'all'
-                    ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                    ? 'bg-[var(--accent)] text-white'
                     : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                 }`}
               >
@@ -143,7 +143,7 @@ export const NewsPage = () => {
                   onClick={() => setCategory(c)}
                   className={`whitespace-nowrap rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                     category === c
-                      ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                      ? 'bg-[var(--accent)] text-white'
                       : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
@@ -158,7 +158,7 @@ export const NewsPage = () => {
               onClick={() => setSortMode('fresh')}
               className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                 sortMode === 'fresh'
-                  ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                  ? 'bg-[var(--accent)] text-white'
                   : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
               }`}
             >
@@ -168,7 +168,7 @@ export const NewsPage = () => {
               onClick={() => setSortMode('top')}
               className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                 sortMode === 'top'
-                  ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                  ? 'bg-[var(--accent)] text-white'
                   : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
               }`}
             >

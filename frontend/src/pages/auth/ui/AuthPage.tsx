@@ -41,7 +41,8 @@ export default function AuthPage() {
           return;
         }
       }
-      navigate('/');
+      // Land on the personal account page right after sign-in / sign-up.
+      navigate('/account');
     } catch (err: any) {
       setError(err?.message || 'Ошибка авторизации.');
     } finally {
@@ -69,7 +70,7 @@ export default function AuthPage() {
         className="absolute inset-0 z-0"
         style={{
           background:
-            'linear-gradient(100deg, rgba(6,7,10,0.94) 0%, rgba(6,7,10,0.74) 32%, rgba(6,7,10,0.42) 58%, rgba(6,7,10,0.80) 100%), radial-gradient(ellipse 60% 60% at 12% 22%, rgba(255,90,31,0.20), transparent 60%)',
+            'linear-gradient(100deg, rgba(6,7,10,0.94) 0%, rgba(6,7,10,0.74) 32%, rgba(6,7,10,0.42) 58%, rgba(6,7,10,0.80) 100%), radial-gradient(ellipse 60% 60% at 12% 22%, rgba(210,106,52,0.20), transparent 60%)',
         }}
       />
       {/* Layer 3: subtle scanlines for cinematic texture */}
@@ -163,7 +164,7 @@ export default function AuthPage() {
                 >
                   <div
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
-                    style={{ background: 'rgba(255,90,31,0.14)', color: 'var(--accent)' }}
+                    style={{ background: 'rgba(210,106,52,0.14)', color: 'var(--accent)' }}
                   >
                     {p.icon}
                   </div>
@@ -203,7 +204,7 @@ export default function AuthPage() {
                 }}
                 className={`flex-1 rounded-pill px-4 py-2 text-xs font-semibold transition ${
                   isLogin === v
-                    ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                    ? 'bg-[var(--accent)] text-white'
                     : 'text-[var(--text-2)] hover:text-[var(--text)]'
                 }`}
               >

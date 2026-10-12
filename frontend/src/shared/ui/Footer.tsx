@@ -1,41 +1,53 @@
 import { Link } from 'react-router-dom';
 import { BrandLogo } from './BrandLogo';
+import { useT } from '@/shared/i18n';
 
 interface FooterSection {
-  title: string;
-  links: Array<{ label: string; to: string }>;
+  titleKey: string;
+  links: Array<{ labelKey: string; to: string }>;
 }
 
 const SECTIONS: FooterSection[] = [
   {
-    title: 'Платформа',
+    titleKey: 'footer.platform',
     links: [
-      { label: 'Прогнозы', to: '/prediction/new' },
-      { label: 'Матчи', to: '/matches' },
-      { label: 'Команды', to: '/teams' },
-      { label: 'Аналитика', to: '/analytics' },
+      { labelKey: 'footer.predictions', to: '/prediction/new' },
+      { labelKey: 'nav.matches', to: '/matches' },
+      { labelKey: 'nav.teams', to: '/teams' },
+      { labelKey: 'nav.analytics', to: '/analytics' },
     ],
   },
   {
-    title: 'Данные',
+    titleKey: 'footer.data',
     links: [
-      { label: 'Игроки', to: '/players' },
-      { label: 'Лента', to: '/news' },
-      { label: 'Кабинет', to: '/history' },
+      { labelKey: 'nav.players', to: '/players' },
+      { labelKey: 'nav.feed', to: '/news' },
+      { labelKey: 'nav.account', to: '/account' },
     ],
   },
   {
-    title: 'Навигация',
+    titleKey: 'footer.nav',
     links: [
-      { label: 'Главная', to: '/' },
-      { label: 'История', to: '/history' },
+      { labelKey: 'nav.home', to: '/' },
+      { labelKey: 'footer.history', to: '/history' },
     ],
   },
 ];
 
 export function Footer() {
+  const t = useT();
   return (
     <footer className="relative mt-16 overflow-hidden border-t border-[var(--line)] bg-[var(--bg-2)] pb-10 pt-20">
+      {/* Accent top line */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent, var(--accent) 50%, transparent)',
+          opacity: 0.45,
+        }}
+      />
       {/* Giant SCORE backdrop wordmark */}
       <div
         aria-hidden
@@ -58,27 +70,26 @@ export function Footer() {
           <div>
             <BrandLogo size="md" />
             <p className="mt-5 max-w-[320px] text-sm leading-relaxed text-[var(--text-3)]">
-              Премиальная баскетбольная аналитика: live-данные, архив матчей,
-              профили игроков и модельные прогнозы в одном интерфейсе.
+              {t('footer.tagline')}
             </p>
           </div>
 
           {SECTIONS.map((section) => (
-            <div key={section.title}>
+            <div key={section.titleKey}>
               <h5
                 className="mb-4 font-mono text-[10px] uppercase text-[var(--text-3)]"
                 style={{ letterSpacing: '0.2em' }}
               >
-                {section.title}
+                {t(section.titleKey)}
               </h5>
               <ul className="space-y-2">
                 {section.links.map((link) => (
-                  <li key={link.label}>
+                  <li key={link.labelKey}>
                     <Link
                       to={link.to}
                       className="text-[13px] text-[var(--text-2)] transition-colors hover:text-[var(--accent)]"
                     >
-                      {link.label}
+                      {t(link.labelKey)}
                     </Link>
                   </li>
                 ))}
@@ -91,8 +102,8 @@ export function Footer() {
           className="mt-14 flex flex-col items-start justify-between gap-3 border-t border-[var(--line)] pt-7 font-mono text-[11px] uppercase text-[var(--text-3)] sm:flex-row"
           style={{ letterSpacing: '0.1em' }}
         >
-          <span>© 2026 SCORE · Все права защищены</span>
-          <span>Сделано для внимательного взгляда на игру</span>
+          <span>{t('footer.rights')}</span>
+          <span>{t('footer.madeFor')}</span>
         </div>
       </div>
     </footer>

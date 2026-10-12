@@ -126,14 +126,18 @@ export const PlayerDetailModal = ({ player, onClose }: Props) => {
       onClick={onClose}
     >
       <article className="player-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Hero — gradient + photo */}
+        {/* Hero — dark backdrop with team-color glow + photo on right */}
         <div
           className="player-modal-hero"
-          style={{
-            background: `linear-gradient(135deg, ${brand.brandColor}, ${brand.accentColor})`,
-          }}
+          style={
+            {
+              '--team-brand': brand.brandColor,
+              '--team-accent': brand.accentColor,
+            } as React.CSSProperties
+          }
         >
           <div className="player-modal-hero-noise" aria-hidden />
+          <div className="player-modal-hero-glow" aria-hidden />
           <button
             onClick={onClose}
             aria-label="Закрыть"
@@ -142,15 +146,17 @@ export const PlayerDetailModal = ({ player, onClose }: Props) => {
             <X className="h-4 w-4" />
           </button>
 
-          <div className="player-modal-hero-inner">
-            <div className="player-modal-photo">
-              <PlayerAvatar player={player} variant="card" />
+          {/* Huge jersey number watermark */}
+          {player.number != null && (
+            <div className="player-modal-jersey" aria-hidden>
+              {asText(player.number)}
             </div>
+          )}
+
+          <div className="player-modal-hero-inner">
             <div className="player-modal-titles">
-              <div
-                className="player-modal-pretitle"
-                style={{ color: 'rgba(0,0,0,0.7)' }}
-              >
+              <div className="player-modal-pretitle">
+                <span className="dot" />
                 {asText(player.position, 'PRO')} ·{' '}
                 {asText(player.team_abbrev || player.team?.abbrev, 'NBA')}
                 {player.number ? ` · #${asText(player.number)}` : ''}
@@ -162,6 +168,9 @@ export const PlayerDetailModal = ({ player, onClose }: Props) => {
                   <span>{asText(player.team?.name, asText(player.team_abbrev, 'NBA'))}</span>
                 </div>
               )}
+            </div>
+            <div className="player-modal-photo">
+              <PlayerAvatar player={player} variant="card" />
             </div>
           </div>
         </div>

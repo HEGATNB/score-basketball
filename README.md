@@ -1,157 +1,122 @@
 # SCORE - basketball prediction website
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)]()
+[![GitHub issues](https://img.shields.io/github/issues/HEGATNB/kyrsach-basketball?style=flat-square)](https://github.com/HEGATNB/score-basketball/issues)
+[![Your feedback is greatly appreciated](https://img.shields.io/badge/feedback-welcome-blue?style=flat-square)](https://github.com/HEGATNB/score-basketball/issues/new)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/HEGATNB/kyrsach-basketball?style=flat-square)](https://github.com/HEGATNB/score-basketball/pulls)
+## Обзор
 
-> Веб-приложение для просмотра статистики баскетбольных матчей и игроков
+SCORE — это веб-приложение для анализа статистики баскетбольных матчей NBA и прогнозирования исходов с использованием нейросетевых моделей. Система предоставляет доступ к статистике команд и игроков, live-данным с ESPN API и машинному обучению.
 
-## О проекте
+Технологический стек: Python / FastAPI (бэкенд), TypeScript / React (фронтенд), PostgreSQL (база данных), Redis (кэш/авторизация), TensorFlow/Keras (ML-модель), Docker (контейнеризация).
+## Возможности
 
-Проект представляет собой веб-приложение с бэкендом на **FastAPI** и фронтендом на **React + Vite**.  
-Данные о матчах и игроках хранятся в SQLite базе данных.
+На данный момент SCORE умеет:
 
-### Возможности
-- Просмотр списка игроков и их статистики
-- Поиск и фильтрация матчей
-- Детальная информация о каждом матче
-- Адаптивный интерфейс
-- ИИ предсказывающий матчи
+    [stats] Просмотр команд и игроков NBA с фильтрацией по сезонам и сортировкой
 
----
+    [predict] Генерация прогнозов исходов матчей с использованием нейросетевой модели (EMA-обработка, 10 статистических категорий)
 
-## Быстрый старт
+    [live] Отображение актуального счёта матчей через ESPN API
 
-### 1. Клонирование репозитория
+    [auth] Регистрация пользователей и JWT-аутентификация с ролевой моделью (гость/пользователь/оператор/администратор)
+
+    [history] Отслеживание точности прогнозов, серий, рейтинга и начисление баллов
+
+    [admin] Управление пользователями, просмотр логов аудита, создание и восстановление резервных копий
+
+    [analytics] Визуализация метрик модели (точность, loss, веса факторов)
+
+## Установка
+
+SCORE распространяется в виде Docker-контейнеров. Оптимальный способ запуска — через Docker Compose:
+
 ```
-bash
 git clone https://github.com/HEGATNB/kyrsach-basketball.git
 cd kyrsach-basketball
 git checkout feature/hegatnb
+docker compose up -d
 ```
-# Бэкенд (FastAPI)
+## Настройка
 
-### 1. Создать и активировать виртуальное окружение:
+Создайте файл backend/env с параметрами подключения к базе данных и настройками безопасности:
 
-   ```
-   python -m venv .venv
-   .venv\Scripts\activate   # Windows
-   # source .venv/bin/activate   # Mac/Linux
-   ```
-### 2. Установить зависимости:
-
-   ``` 
-   cd backend
-   pip install -r requirements.txt
-   ``` 
-### 3. Запустить сервер:
-
-   ```
-   uvicorn main:app --reload --port 8000
-   ``` 
-# Для начала работы
-- Создать виртуальное окружение<br>
-```python -m venv .venv```
-<br></br>
-- Активировать виртуальное окружение<br>
-```.venv\Scripts\activate```
-<br></br>
-- Перейти в папку бэкенда<br>
-```cd backend```
-<br></br>
-- Установить зависимости<br>
-```pip install -r requirements.txt```
-<br></br>
-- Скачать базу и перенести в нужное место<br>
-*(База должна лежать в: backend/data/nba.sqlite)*
-<br></br>
-- Запустить сервер<br>
-```uvicorn main:app --reload --port 8000```
-<br></br>
-- Перейти в корневую папку<br>
-```cd ../```
-<br></br>
-- Из корня проекта перейти в папку фронтенда<br>
-```cd frontend```
-<br></br>
-- Установить зависимости<br>
-```npm install```
-<br></br>
-- Запустить дев-сервер<br>
-```npm run dev```
-<br></br>
-____
-____
-
-# Basketball Stats Hub
-
-> Web application for viewing basketball match and player statistics
-
-## About
-
-The project is a web application with a **FastAPI** backend and a **React + Vite** frontend.  
-Match and player data is stored in an SQLite database.
-
-### Features
-- View list of players and their statistics
-- Search and filter matches
-- Detailed information about each match
-- Responsive interface
-- AI-powered match prediction
-
----
-
-## Quick Start
-
-### 1. Clone the repository
 ```
-bash
-git clone https://github.com/HEGATNB/kyrsach-basketball.git
-cd kyrsach-basketball
-git checkout feature/hegatnb
+DB_HOST=host.docker.internal
+DB_PORT=5432
+DB_NAME=nba
+DB_USER=postgres
+DB_PASSWORD=your_password
+REDIS_HOST=redis
+JWT_SECRET=your_secret_key
 ```
-# Backend (FastAPI)
+## Использование
 
-### 1. Create and activate a virtual environment:
+По умолчанию SCORE запускает все сервисы:
 ```
-   python -m venv .venv
-   .venv\Scripts\activate   # Windows
-   # source .venv/bin/activate   # Mac/Linux
-   ```
+Веб-интерфейс: http://localhost (порт 80)
 
-### 2. Install dependencies:
+Документация API: http://localhost:8000/docs
 ```
-    cd backend
-    pip install -r requirements.txt
+Проверка состояния API:
 ```
-### 3. Start the server:
+curl http://localhost/health
 ```
-uvicorn main:app --reload --port 8000
+Просмотр состояния контейнеров:
 ```
-# Getting Started
-- Create a virtual environment<br>
-```python -m venv .venv```
-<br></br>
-- Activate the virtual environment<br>
-```.venv\Scripts\activate```
-<br></br>
-- Navigate to the backend folder<br>
-```cd backend```
-<br></br>
-- Install dependencies<br>
-```pip install -r requirements.txt```
-<br></br>
-- Download the database and place it in the correct location<br>
-*(Database should be located at: backend/data/nba.sqlite)*
-<br></br>
-- Start the server<br>
-```uvicorn main:app --reload --port 8000```
-<br></br>
-- Navigate back to the root folder<br>
-```cd ../```
-<br></br>
-- From the root, navigate to the frontend folder<br>
-```cd frontend```
-<br></br>
-- Install dependencies<br>
-```npm install```
-<br></br>
-- Start the development server<br>
-```npm run dev```
-<br></br>
+docker compose ps
+```
+Просмотр логов бэкенда:
+```
+docker compose logs backend
+```
+Остановка приложения:
+```
+docker compose down
+```
+## Тестирование
+
+Запуск тестов бэкенда через pytest:
+```
+cd backend
+pytest tests/
+```
+Результаты тестирования: 18 успешно <br>
+(10 модульных тестов, 3 интеграционных, 5 API-тестов).
+## Архитектура
+
+
+Browser ->Nginx(reverse proxy) -> FastAPI (бэкенд) -> PostgreSQL/Redis<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;|<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;└── TensorFlow модель 
+
+## Участие в разработке
+
+Мы приветствуем вклад в развитие SCORE. Вы можете помочь следующими способами:
+
+    Создать Issue с предложениями по улучшению или сообщить об ошибке;
+
+    Сделать форк репозитория и отправить Pull Request;
+
+    Улучшить документацию.
+
+Рекомендации по коду:
+
+    Код на Python должен соответствовать стандарту PEP 8;
+
+    Код на TypeScript должен соответствовать правилам ESLint;
+
+    Pull Request должны содержать тесты для новой функциональности.
+
+## Авторы
+
+    Говорунов Д.Д. (Тимлид, Архитектор)
+
+    Нижегородов Д.С. (Системный аналитик)
+
+    Рыбаков М.М. (Backend-разработчик)
+
+    Журавлев А.И. (Frontend-разработчик)
+
+    Карапетян А.Л. (QA-инженер)
+
+РТУ МИРЭА, 2026

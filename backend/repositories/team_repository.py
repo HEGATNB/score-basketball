@@ -4,11 +4,12 @@ from repositories.base_repository import BaseRepository
 
 
 class TeamRepository(BaseRepository):
-    """Репозиторий для работы с таблицами team, team_details, team_info_common"""
+    # Репозиторий для работы с таблицами team, team_details, team_info_common
 
     def __init__(self, db: Session):
         super().__init__(db)
 
+    # Получение всех команд
     def get_all(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         query = """
             WITH team_stats AS (
@@ -58,10 +59,10 @@ class TeamRepository(BaseRepository):
         """
         return self._fetch_all(query, {"limit": limit, "skip": skip})
 
+    # Получение команды по ID
     def get_by_id(self, team_id: int) -> Optional[Dict[str, Any]]:
         team_id_str = str(team_id)
 
-        # Основная информация
         query = """
             SELECT
                 t.id,
@@ -77,7 +78,6 @@ class TeamRepository(BaseRepository):
         team = self._fetch_one(query, {"team_id": team_id_str})
 
         if not team:
-            # Поиск в таблице game
             game_query = """
                 SELECT 
                     CASE 
@@ -98,7 +98,6 @@ class TeamRepository(BaseRepository):
             """
             return self._fetch_one(game_query, {"team_id": team_id_str})
 
-        # Статистика команды
         stats_query = """
             SELECT 
                 w, l, pct, pts_pg, opp_pts_pg, reb_pg, ast_pg,
@@ -111,7 +110,6 @@ class TeamRepository(BaseRepository):
         """
         stats = self._fetch_one(stats_query, {"team_id": team_id_str})
 
-        # Детали команды
         details_query = """
             SELECT arena, arenacapacity as arena_capacity, headcoach as head_coach,
                    generalmanager as general_manager, owner
@@ -148,6 +146,7 @@ class TeamRepository(BaseRepository):
         }
         return result
 
+    # Получение команды по названию
     def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         query = """
             SELECT id, full_name as name, abbreviation as abbrev
@@ -157,6 +156,7 @@ class TeamRepository(BaseRepository):
         """
         return self._fetch_one(query, {"name": f"%{name}%"})
 
+    # Создание новой команды
     def create(self, full_name: str, abbrev: str, nickname: str = None,
                city: str = None, state: str = None, year_founded: int = None) -> Dict[str, Any]:
         query = """
@@ -175,6 +175,7 @@ class TeamRepository(BaseRepository):
         result = self._execute_with_commit(query, params)
         return dict(result.fetchone()._mapping)
 
+    # Обновление команды
     def update(self, team_id: int, **kwargs) -> bool:
         update_fields = []
         params = {"team_id": team_id}
@@ -197,11 +198,13 @@ class TeamRepository(BaseRepository):
 
         return True
 
+    # Удаление команды
     def delete(self, team_id: int) -> bool:
         query = "DELETE FROM team WHERE id = :team_id"
         self._execute_with_commit(query, {"team_id": str(team_id)})
         return True
 
+    # Общее количество команд
     def count(self) -> int:
         query = "SELECT COUNT(*) FROM team"
         return self._fetch_scalar(query) or 0

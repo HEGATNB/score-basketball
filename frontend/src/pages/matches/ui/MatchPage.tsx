@@ -81,7 +81,7 @@ export const MatchPage = () => {
 
         <div className="mb-6 flex flex-wrap items-center gap-2">
           <span className={`tag ${isFinished ? 'tag-gold' : 'tag-hot'}`}>
-            {isFinished ? 'FINAL' : 'UPCOMING'}
+            {isFinished ? 'ОКОНЧЕН' : 'СКОРО'}
           </span>
           <span className="tag">
             <Calendar className="h-3 w-3" />
@@ -178,7 +178,7 @@ export const MatchPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,90,31,0.12)', color: 'var(--accent)' }}
+                style={{ background: 'rgba(210,106,52,0.12)', color: 'var(--accent)' }}
               >
                 <Calendar className="h-4 w-4" />
               </div>
@@ -199,7 +199,7 @@ export const MatchPage = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,184,0,0.12)', color: 'var(--gold)' }}
+                style={{ background: 'rgba(230,185,74,0.12)', color: 'var(--gold)' }}
               >
                 <MapPin className="h-4 w-4" />
               </div>
@@ -218,12 +218,12 @@ export const MatchPage = () => {
 
           <div
             className="card p-8"
-            style={{ background: 'linear-gradient(135deg, rgba(255,90,31,0.10), transparent), var(--surface)' }}
+            style={{ background: 'linear-gradient(135deg, rgba(210,106,52,0.10), transparent), var(--surface)' }}
           >
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-md"
-                style={{ background: 'rgba(255,90,31,0.18)', color: 'var(--accent)' }}
+                style={{ background: 'rgba(210,106,52,0.18)', color: 'var(--accent)' }}
               >
                 <Cpu className="h-4 w-4" />
               </div>

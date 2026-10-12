@@ -31,7 +31,7 @@ async def toggle_user_block(
         if current_user.user_id == user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Нельзя заблокировать собственный аккаунт"
+                detail="You cannot block your own account"
             )
 
         target = db.execute(
@@ -42,14 +42,14 @@ async def toggle_user_block(
         if not target:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Пользователь не найден"
+                detail="User was not found"
             )
 
         target_data = dict(target._mapping)
         if target_data.get("role") == "admin" and is_blocked:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Администратор не может заблокировать администратора"
+                detail="An administrator cannot block another administrator"
             )
 
         # Обновляем статус в БД
@@ -73,7 +73,7 @@ async def toggle_user_block(
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Пользователь не найден"
+                detail="User was not found"
             )
 
         user_data = dict(result._mapping)
@@ -391,7 +391,7 @@ async def restore_backup(
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Бэкап не найден"
+                detail="Backup was not found"
             )
 
         import json
@@ -403,7 +403,7 @@ async def restore_backup(
         if not os.path.exists(filepath):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Файл бэкапа не найден"
+                detail="Backup file was not found"
             )
 
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -459,7 +459,7 @@ async def restore_backup(
             ip_address=request.client.host if request.client else None
         )
 
-        return {"message": "Бэкап успешно восстановлен"}
+        return {"message": "Backup restored successfully"}
 
     except HTTPException:
         raise

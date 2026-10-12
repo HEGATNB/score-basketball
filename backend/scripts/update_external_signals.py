@@ -104,7 +104,7 @@ def build_signals() -> Dict[str, Any]:
         except Exception as exc:
             print(f"Warning: external feed unavailable ({exc}). Falling back to neutral values.")
 
-    # Graceful fallback for missing or disabled feeds.
+    # При отсутствии лент или их отключении продолжаем работу без ошибки.
     for team_id, team_info in team_registry.items():
         if team_id not in signals:
             signals[team_id] = {

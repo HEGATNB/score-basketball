@@ -11,8 +11,8 @@ class PlayerService:
         self.db = db
         self.player_repo = PlayerRepository(db)
 
+    # Форматирует рост из сантиметров в строку с единицей измерения
     def _format_height(self, height_cm: Optional[str]) -> Optional[str]:
-        """Форматирует рост"""
         if not height_cm:
             return None
         try:
@@ -21,8 +21,8 @@ class PlayerService:
         except:
             return str(height_cm)
 
+    # Преобразует вес в число с плавающей точкой (в кг)
     def _format_weight(self, weight_kg: Optional[str]) -> Optional[float]:
-        """Возвращает вес как число (в кг)"""
         if not weight_kg:
             return None
         try:
@@ -30,6 +30,7 @@ class PlayerService:
         except (ValueError, TypeError):
             return None
 
+    # Получает всех игроков с группировкой по имени
     def get_all_players(
             self,
             team_abbrev: Optional[str] = None,
@@ -41,9 +42,6 @@ class PlayerService:
             skip: int = 0,
             limit: int = 100
     ) -> List[Dict[str, Any]]:
-        """
-        Получение всех игроков с группировкой по имени
-        """
         try:
             players_data = self.player_repo.get_all(
                 team_abbrev=team_abbrev,
@@ -56,7 +54,7 @@ class PlayerService:
                 limit=limit
             )
 
-            # Группируем игроков по имени
+            # Группирует игроков по имени
             players_by_name = {}
 
             for player_data in players_data:
@@ -65,26 +63,26 @@ class PlayerService:
                     players_by_name[name] = []
                 players_by_name[name].append(player_data)
 
-            # Формируем итоговый список игроков (один игрок = все сезоны)
+            # Формирует итоговый список игроков (один игрок = все сезоны)
             players = []
 
             for name, seasons_data in players_by_name.items():
-                # Сортируем сезоны по убыванию
+                # Сортирует сезоны по убыванию
                 seasons_data.sort(key=lambda x: x.get("season", ""), reverse=True)
 
-                # Берём самый новый сезон как основной
+                # Берет самый новый сезон как основной
                 latest = seasons_data[0]
 
-                # Собираем список всех сезонов
+                # Собирает список всех сезонов
                 seasons_list = [s.get("season") for s in seasons_data if s.get("season")]
 
-                # Разбиваем имя на части
+                # Разбивает имя на части
                 full_name = name
                 name_parts = full_name.split(" ")
                 first_name = name_parts[0] if name_parts else ""
                 last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
 
-                # Получаем номер из draft_number
+                # Получает номер из draft_number
                 draft_number = latest.get("draft_number")
                 number = None
                 if draft_number:
@@ -94,7 +92,7 @@ class PlayerService:
 
                 position = latest.get("position")
 
-                # Формируем объект команды
+                # Формирует объект команды
                 team_obj = None
                 if latest.get("team_id"):
                     team_obj = {
@@ -154,15 +152,15 @@ class PlayerService:
             traceback.print_exc()
             return []
 
+    # Получает игрока по ID с группировкой сезонов
     def get_player_by_id(self, player_id: int) -> Optional[Dict[str, Any]]:
-        """Получение игрока по ID с группировкой сезонов"""
         try:
             player_data = self.player_repo.get_by_id(player_id)
 
             if not player_data:
                 return None
 
-            # Получаем все записи игрока с разными сезонами
+            # Получает все записи игрока с разными сезонами
             check_common = self.player_repo.check_common_player_info_exists()
 
             if check_common:
@@ -248,12 +246,8 @@ class PlayerService:
             print(f"Ошибка получения игрока по ID: {e}")
             return None
 
+    # Возвращает статистику по сезонам для модального окна деталей игрока на фронтенде
     def get_player_seasons_breakdown(self, player_id: int) -> Optional[Dict[str, Any]]:
-        """Per-season stats for the PlayerDetailModal on the frontend.
-
-        Returns career averages, season-by-season rows, and the unique list
-        of teams the player has appeared for.
-        """
         try:
             player_data = self.player_repo.get_by_id(player_id)
             if not player_data:
@@ -327,17 +321,20 @@ class PlayerService:
                 "teams": teams_seen,
             }
         except Exception as e:
-            print(f"Error in get_player_seasons_breakdown: {e}")
+            print(f"Ошибка в get_player_seasons_breakdown: {e}")
             import traceback
             traceback.print_exc()
             return None
 
+    # Получает игроков по команде
     def get_players_by_team(self, team_abbrev: str) -> List[Dict[str, Any]]:
         return self.get_all_players(team_abbrev=team_abbrev)
 
+    # Получает список доступных сезонов
     def get_seasons(self) -> List[str]:
         return self.player_repo.get_seasons()
 
+    # Получает топ-игроков по категории
     def get_top_players(
             self,
             category: str = 'pts',

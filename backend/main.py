@@ -25,7 +25,7 @@ except Exception:
 
 app = FastAPI(
     title="HoopsAI API",
-    description="API для прогнозирования баскетбольных матчей",
+    description="API for basketball match prediction",
     version="1.0.0"
 )
 
@@ -47,9 +47,9 @@ app.add_middleware(
 # Переменные для нейросети
 
 model = None
-scaler = None              # legacy single-scaler artifact (older trainer)
-scaler_home = None         # current trainer: separate scaler for the home features
-scaler_away = None         # current trainer: separate scaler for the away features
+scaler = None              # Устаревший артефакт с одним scaler от прежней версии обучения
+scaler_home = None         # Текущая версия: отдельный scaler для признаков хозяев
+scaler_away = None         # Текущая версия: отдельный scaler для признаков гостей
 team_emas = {}
 teams_df = None
 STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
@@ -89,8 +89,8 @@ def load_artifacts():
     try:
         model = load_model(model_path)
 
-        # Prefer the per-side scaler pair produced by the current trainer.
-        # Fall back to the legacy single scaler.pkl for older artifacts.
+        # Сначала используем пару scaler, созданную текущей версией обучения.
+        # Для старых артефактов используем резервный единый scaler.pkl.
         if os.path.exists(scaler_home_path) and os.path.exists(scaler_away_path):
             with open(scaler_home_path, "rb") as f:
                 scaler_home = pickle.load(f)
@@ -169,7 +169,7 @@ def neural_predict(request: NeuralPredictionRequest):
     away_feat = np.array([away_ema[s] for s in STATS], dtype=np.float32).reshape(1, -1)
 
     if scaler_home is not None and scaler_away is not None:
-        # Match the per-side scaling used at training time
+        # Масштабируем признаки так же, как при обучении модели
         home_scaled = scaler_home.transform(home_feat)
         away_scaled = scaler_away.transform(away_feat)
         feat_scaled = np.hstack([home_scaled, away_scaled])

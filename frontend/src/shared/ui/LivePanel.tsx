@@ -165,7 +165,7 @@ export const LivePanel = ({ refreshMs = REFRESH_MS_DEFAULT, maxRows = 4, classNa
             } catch {
               midLine = 'TIP';
             }
-          } else midLine = e.shortDetail || 'FINAL';
+          } else midLine = e.shortDetail || 'ОКОНЧЕН';
 
           return (
             <div
@@ -187,7 +187,7 @@ export const LivePanel = ({ refreshMs = REFRESH_MS_DEFAULT, maxRows = 4, classNa
                 )}
                 {e.state === 'post' && (
                   <span className="font-mono text-[9px] uppercase" style={{ color: 'var(--gold)' }}>
-                    FINAL
+                    ОКОНЧЕН
                   </span>
                 )}
               </div>

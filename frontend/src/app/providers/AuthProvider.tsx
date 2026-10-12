@@ -7,6 +7,10 @@ interface AuthContextType {
   login: (identifier: string, password: string) => Promise<boolean>;
   register: (data: { email: string; password: string; name?: string; username?: string }) => Promise<boolean>;
   logout: () => void;
+  /** Updates the cached user object after a profile change. */
+  setUser: (user: AuthUser | null) => void;
+  /** Re-fetches /auth/me — call after a profile edit so the header refreshes. */
+  refreshUser: () => Promise<AuthUser | null>;
   isAdmin: boolean;
   isOperator: boolean;
   loading: boolean;
@@ -57,6 +61,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     authService.logout();
   };
 
+  const refreshUser = async (): Promise<AuthUser | null> => {
+    try {
+      const profile = await apiRequest<AuthUser>('/auth/me', undefined, false);
+      setUser(profile);
+      return profile;
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -64,6 +78,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         register,
         logout,
+        setUser,
+        refreshUser,
         isAdmin: user?.role === 'admin',
         isOperator: user?.role === 'operator' || user?.role === 'admin',
         loading,

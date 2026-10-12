@@ -9,6 +9,7 @@ class GameRepository(BaseRepository):
     def __init__(self, db: Session):
         super().__init__(db)
 
+    # Получение всех матчей с фильтрацией по статусу
     def get_all(self, status_filter: str = None, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         query = """
             SELECT 
@@ -42,6 +43,7 @@ class GameRepository(BaseRepository):
 
         return self._fetch_all(query, params)
 
+    # Получение матча по ID
     def get_by_id(self, game_id: str) -> Optional[Dict[str, Any]]:
         query = """
             SELECT 
@@ -64,33 +66,55 @@ class GameRepository(BaseRepository):
         """
         return self._fetch_one(query, {"game_id": game_id})
 
+    # Общее количество матчей
     def count(self) -> int:
-        """Общее количество матчей"""
         query = "SELECT COUNT(*) FROM game"
         return self._fetch_scalar(query) or 0
 
+    # Количество завершенных матчей (с результатом)
     def count_finished(self) -> int:
-        """Количество завершенных матчей (с результатом)"""
         query = "SELECT COUNT(*) FROM game WHERE wl_home IS NOT NULL"
         return self._fetch_scalar(query) or 0
 
+    # Получение статистики команды за последние N матчей
     def get_team_stats(self, team_id: str, limit: int = 30) -> Optional[Dict[str, Any]]:
+        team_id = str(team_id)
         query = """
             SELECT 
-                AVG(CAST(pts_home AS FLOAT)) as pts_pg,
-                AVG(CAST(pts_away AS FLOAT)) as opp_pts_pg,
+                AVG(points_for) as pts_pg,
+                AVG(points_against) as opp_pts_pg,
                 COUNT(*) as games_played,
-                SUM(CASE WHEN wl_home = 'W' THEN 1 ELSE 0 END) as wins
-            FROM game 
-            WHERE team_id_home = :team_id
-            AND pts_home IS NOT NULL
-            AND pts_home > 0
-            ORDER BY game_date DESC
-            LIMIT :limit
+                SUM(CASE WHEN is_win THEN 1 ELSE 0 END) as wins
+            FROM (
+                SELECT
+                    CASE
+                        WHEN team_id_home = :team_id THEN CAST(pts_home AS FLOAT)
+                        ELSE CAST(pts_away AS FLOAT)
+                    END as points_for,
+                    CASE
+                        WHEN team_id_home = :team_id THEN CAST(pts_away AS FLOAT)
+                        ELSE CAST(pts_home AS FLOAT)
+                    END as points_against,
+                    CASE
+                        WHEN team_id_home = :team_id THEN wl_home = 'W'
+                        ELSE wl_away = 'W'
+                    END as is_win,
+                    game_date
+                FROM game 
+                WHERE (team_id_home = :team_id OR team_id_away = :team_id)
+                AND pts_home IS NOT NULL
+                AND pts_away IS NOT NULL
+                AND pts_home > 0
+                AND pts_away > 0
+                ORDER BY game_date DESC
+                LIMIT :limit
+            ) recent_games
         """
         return self._fetch_one(query, {"team_id": team_id, "limit": limit})
 
+    # Получение истории матчей команды
     def get_team_history(self, team_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        team_id = str(team_id)
         query = """
             SELECT 
                 team_id_home,
@@ -110,7 +134,10 @@ class GameRepository(BaseRepository):
         """
         return self._fetch_all(query, {"team_id": team_id, "limit": limit})
 
+    # Получение истории личных встреч двух команд
     def get_head_to_head(self, team1_id: str, team2_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        team1_id = str(team1_id)
+        team2_id = str(team2_id)
         query = """
             SELECT 
                 team_id_home,
@@ -131,6 +158,7 @@ class GameRepository(BaseRepository):
         """
         return self._fetch_all(query, {"team1": team1_id, "team2": team2_id, "limit": limit})
 
+    # Вставка нового матча
     def insert(self, game_data: Dict[str, Any]) -> bool:
         columns = ', '.join(game_data.keys())
         placeholders = ', '.join([f':{k}' for k in game_data.keys()])
@@ -138,6 +166,7 @@ class GameRepository(BaseRepository):
         self._execute_with_commit(query, game_data)
         return True
 
+    # Проверка существования матча
     def exists(self, game_id: str) -> bool:
         query = "SELECT 1 FROM game WHERE game_id = :game_id"
         result = self._fetch_one(query, {"game_id": game_id})

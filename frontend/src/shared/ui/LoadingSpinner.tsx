@@ -16,7 +16,7 @@ export const LoadingSpinner = ({ fullScreen = false, size = 'md', label }: Loadi
       <div className={`relative ${sizeClass[size]}`}>
         <div
           className="absolute inset-0 rounded-full border-2"
-          style={{ borderColor: 'rgba(255,90,31,0.18)' }}
+          style={{ borderColor: 'rgba(210,106,52,0.18)' }}
         />
         <div
           className="absolute inset-0 animate-spin rounded-full border-2 border-transparent"
@@ -24,7 +24,7 @@ export const LoadingSpinner = ({ fullScreen = false, size = 'md', label }: Loadi
         />
         <div
           className="absolute inset-2 animate-pulse rounded-full"
-          style={{ background: 'rgba(255,90,31,0.18)' }}
+          style={{ background: 'rgba(210,106,52,0.18)' }}
         />
         <div
           className="absolute inset-0 m-auto h-1.5 w-1.5 rounded-full"

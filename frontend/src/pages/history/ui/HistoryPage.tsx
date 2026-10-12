@@ -19,6 +19,7 @@ import { apiRequest, type Prediction } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
+import { ProfileSettingsModal } from '@/shared/ui/ProfileSettingsModal';
 
 interface CategoryStats {
   n: number;
@@ -49,6 +50,7 @@ export const HistoryPage = () => {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -75,7 +77,7 @@ export const HistoryPage = () => {
           <div className="card mx-auto max-w-2xl p-10 text-center sm:p-14">
             <div
               className="mx-auto flex h-14 w-14 items-center justify-center rounded-md"
-              style={{ background: 'rgba(255,90,31,0.15)', color: 'var(--accent)' }}
+              style={{ background: 'rgba(210,106,52,0.15)', color: 'var(--accent)' }}
             >
               <Lock className="h-6 w-6" />
             </div>
@@ -169,7 +171,7 @@ export const HistoryPage = () => {
         className="relative isolate overflow-hidden"
         style={{
           background:
-            'radial-gradient(ellipse 80% 60% at 15% 0%, rgba(255,90,31,0.18), transparent 60%), radial-gradient(ellipse 60% 60% at 90% 100%, rgba(93,184,255,0.10), transparent 70%), var(--bg)',
+            'radial-gradient(ellipse 80% 60% at 15% 0%, rgba(210,106,52,0.18), transparent 60%), radial-gradient(ellipse 60% 60% at 90% 100%, rgba(93,184,255,0.10), transparent 70%), var(--bg)',
         }}
       >
         <div
@@ -227,8 +229,8 @@ export const HistoryPage = () => {
               <div
                 className="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-[var(--bg)] font-display text-5xl"
                 style={{
-                  background: 'linear-gradient(135deg, var(--accent), var(--gold))',
-                  color: '#0a0a0c',
+                  background: 'linear-gradient(135deg, var(--accent-strong), var(--accent-deep))',
+                  color: '#fff5f5',
                   outline: '2px solid var(--line-strong)',
                   boxShadow: '0 20px 50px -15px var(--accent-glow)',
                 }}
@@ -257,7 +259,7 @@ export const HistoryPage = () => {
               className="p-5"
               style={{
                 background:
-                  'radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255,90,31,0.18), transparent 60%), var(--surface)',
+                  'radial-gradient(ellipse 80% 60% at 20% 0%, rgba(210,106,52,0.18), transparent 60%), var(--surface)',
               }}
             >
               <div
@@ -396,7 +398,7 @@ export const HistoryPage = () => {
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-10 w-10 items-center justify-center rounded-md"
-                      style={{ background: 'rgba(255,90,31,0.15)', color: 'var(--accent)' }}
+                      style={{ background: 'rgba(210,106,52,0.15)', color: 'var(--accent)' }}
                     >
                       <Sparkles className="h-4 w-4" />
                     </div>
@@ -434,7 +436,7 @@ export const HistoryPage = () => {
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-10 w-10 items-center justify-center rounded-md"
-                      style={{ background: 'rgba(255,184,0,0.15)', color: 'var(--gold)' }}
+                      style={{ background: 'rgba(230,185,74,0.15)', color: 'var(--gold)' }}
                     >
                       <TrendingUp className="h-4 w-4" />
                     </div>
@@ -450,7 +452,7 @@ export const HistoryPage = () => {
 
                 <button
                   className="card group flex items-center justify-between gap-3 p-4 transition hover:border-[var(--line-strong)]"
-                  onClick={() => undefined}
+                  onClick={() => setSettingsOpen(true)}
                 >
                   <div className="flex items-center gap-3">
                     <div
@@ -461,9 +463,10 @@ export const HistoryPage = () => {
                     </div>
                     <div>
                       <div className="font-display text-lg uppercase">Настройки</div>
-                      <div className="text-[11px] text-[var(--text-3)]">Профиль, уведомления</div>
+                      <div className="text-[11px] text-[var(--text-3)]">Имя, email, пароль</div>
                     </div>
                   </div>
+                  <ArrowUpRight className="h-4 w-4 text-[var(--text-3)] transition group-hover:text-[var(--text)]" />
                 </button>
 
                 <button
@@ -507,18 +510,65 @@ export const HistoryPage = () => {
           </div>
 
           {predictions.length === 0 ? (
-            <div className="card p-16 text-center">
-              <TrendingUp className="mx-auto h-10 w-10 text-[var(--text-3)]" />
-              <p className="display-h mt-5" style={{ fontSize: 32 }}>
-                ПОКА ПУСТО
-              </p>
-              <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-3)]">
-                Сделай первый прогноз — он попадёт сюда и в недельный рейтинг.
-              </p>
-              <Link to="/prediction/new" className="btn btn-primary mt-7">
-                <Sparkles className="h-4 w-4" />
-                Сделать прогноз
-              </Link>
+            <div className="empty-state">
+              <div className="empty-state-illu" aria-hidden>
+                <div className="empty-state-orbit empty-state-orbit-1" />
+                <div className="empty-state-orbit empty-state-orbit-2" />
+                <div className="empty-state-orbit empty-state-orbit-3" />
+                <div className="empty-state-core">
+                  <TrendingUp className="h-7 w-7" />
+                </div>
+                <span className="empty-state-spark empty-state-spark-1">●</span>
+                <span className="empty-state-spark empty-state-spark-2">●</span>
+                <span className="empty-state-spark empty-state-spark-3">●</span>
+              </div>
+
+              <div className="empty-state-body">
+                <span className="eyebrow">
+                  <span className="dot" />
+                  ПЕРСОНАЛЬНАЯ СТАТИСТИКА · ВКЛ ПОСЛЕ 1-ГО ПРОГНОЗА
+                </span>
+                <h3 className="display-h" style={{ fontSize: 'clamp(28px, 4vw, 44px)', marginTop: 14 }}>
+                  ЭТО ТВОЯ <em>ТРЕКИНГ-ПАНЕЛЬ</em>
+                </h3>
+                <p className="empty-state-lead">
+                  Каждый прогноз сохранён, оценён и попадает в недельный рейтинг.
+                  После первого прогноза тут появятся: точность, лучшие серии, разрядка по категориям.
+                </p>
+                <div className="empty-state-actions">
+                  <Link to="/prediction/new" className="btn btn-primary">
+                    <Sparkles className="h-4 w-4" />
+                    Сделать первый прогноз
+                  </Link>
+                  <Link to="/matches" className="btn btn-ghost">
+                    Открыть календарь <span className="arrow">→</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Preview tiles — what user will see once they have data */}
+              <div className="empty-state-preview" aria-hidden>
+                <div className="empty-state-tile">
+                  <span className="lbl">ТОЧНОСТЬ</span>
+                  <span className="val tab-num">— %</span>
+                  <span className="hint">после 5 прогнозов</span>
+                </div>
+                <div className="empty-state-tile">
+                  <span className="lbl">СЕРИЯ</span>
+                  <span className="val tab-num">0</span>
+                  <span className="hint">точных подряд</span>
+                </div>
+                <div className="empty-state-tile">
+                  <span className="lbl">МЕСТО</span>
+                  <span className="val tab-num">—</span>
+                  <span className="hint">в недельном топе</span>
+                </div>
+                <div className="empty-state-tile">
+                  <span className="lbl">ОЧКИ</span>
+                  <span className="val tab-num">0</span>
+                  <span className="hint">за качество</span>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-3">
@@ -615,6 +665,8 @@ export const HistoryPage = () => {
           )}
         </div>
       </section>
+
+      <ProfileSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   );
 };

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Search, X } from 'lucide-react';
 import { apiRequest, type Team } from '@/shared/api/client';
+import { useT } from '@/shared/i18n';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
 
@@ -169,7 +170,7 @@ export const TeamsPage = () => {
                   onClick={() => setConference(c)}
                   className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                     conference === c
-                      ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                      ? 'bg-[var(--accent)] text-white'
                       : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
@@ -185,7 +186,7 @@ export const TeamsPage = () => {
                   onClick={() => setView(v)}
                   className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                     view === v
-                      ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                      ? 'bg-[var(--accent)] text-white'
                       : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
@@ -265,7 +266,7 @@ export const TeamsPage = () => {
                           className="h-full"
                           style={{
                             width: `${Math.max(8, winPct)}%`,
-                            background: 'linear-gradient(90deg, var(--accent), var(--gold))',
+                            background: 'linear-gradient(90deg, var(--accent-deep), var(--accent-strong))',
                           }}
                         />
                       </div>

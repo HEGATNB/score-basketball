@@ -19,7 +19,7 @@ const roundedClass = {
 export const Glass = forwardRef<HTMLDivElement, GlassProps>(
   ({ variant = 'default', rounded = '2xl', className = '', children, ...rest }, ref) => {
     const baseClass = variant === 'court'
-      ? 'card border border-[rgba(255,90,31,0.25)] bg-[rgba(255,90,31,0.06)]'
+      ? 'card border border-[rgba(210,106,52,0.25)] bg-[rgba(210,106,52,0.06)]'
       : 'card';
     return (
       <div ref={ref} className={`${baseClass} ${roundedClass[rounded]} ${className}`} {...rest}>
@@ -47,7 +47,7 @@ export const MotionGlass = ({
 }: MotionGlassProps) => {
   void _delay;
   const baseClass = variant === 'court'
-    ? 'card border border-[rgba(255,90,31,0.25)] bg-[rgba(255,90,31,0.06)]'
+    ? 'card border border-[rgba(210,106,52,0.25)] bg-[rgba(210,106,52,0.06)]'
     : 'card';
   return (
     <div className={`${baseClass} ${roundedClass[rounded]} ${className}`} {...rest}>

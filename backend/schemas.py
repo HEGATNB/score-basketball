@@ -89,7 +89,7 @@ class PlayerBase(BaseModel):
 
 class PlayerResponse(PlayerBase):
     id: int
-    # Real NBA person_id from common_player_info — drives cdn.nba.com headshots
+    # Реальный person_id из common_player_info для загрузки фотографий с cdn.nba.com
     nba_person_id: Optional[int] = None
 
     class Config:
@@ -137,7 +137,7 @@ class TeamResponse(TeamBase):
         from_attributes = True
 
 
-# Match schemas
+# Схемы матчей
 class TeamInfo(BaseModel):
     id: int
     name: str
@@ -173,7 +173,7 @@ class MatchResponse(MatchBase):
         from_attributes = True
 
 
-# Prediction schemas
+# Схемы прогнозов
 class PredictionRequest(BaseModel):
     team1_id: int = Field(..., alias="team1Id")
     team2_id: int = Field(..., alias="team2Id")

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LogIn, LogOut, Menu, Search, X } from 'lucide-react';
 import { useAuth } from './providers/AuthProvider';
+import { useT } from '@/shared/i18n';
 import { BrandLogo } from '@/shared/ui/BrandLogo';
+import { LanguageToggle } from '@/shared/ui/LanguageToggle';
 import { Footer } from '@/shared/ui/Footer';
 import { CookieAccept } from '@/shared/ui/CookieAccept';
 import { SearchPalette } from '@/shared/ui/SearchPalette';
@@ -10,23 +12,24 @@ import { ErrorBoundary } from './ErrorBoundary';
 
 type NavItem = {
   to: string;
-  label: string;
+  tKey: string;
   end?: boolean;
   authOnly?: boolean;
 };
 
 const navItems: NavItem[] = [
-  { to: '/', label: 'Главная', end: true },
-  { to: '/matches', label: 'Матчи' },
-  { to: '/players', label: 'Игроки' },
-  { to: '/teams', label: 'Команды' },
-  { to: '/news', label: 'Лента' },
-  { to: '/analytics', label: 'Аналитика' },
-  { to: '/history', label: 'Кабинет', authOnly: true },
+  { to: '/', tKey: 'nav.home', end: true },
+  { to: '/matches', tKey: 'nav.matches' },
+  { to: '/players', tKey: 'nav.players' },
+  { to: '/teams', tKey: 'nav.teams' },
+  { to: '/news', tKey: 'nav.feed' },
+  { to: '/analytics', tKey: 'nav.analytics' },
+  { to: '/account', tKey: 'nav.account', authOnly: true },
 ];
 
 export const Layout = () => {
   const { user, logout, isAdmin } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -74,7 +77,7 @@ export const Layout = () => {
                   end={item.end}
                   className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
                 >
-                  {item.label}
+                  {t(item.tKey)}
                 </NavLink>
               ))}
             {isAdmin && (
@@ -85,35 +88,26 @@ export const Layout = () => {
                 }
                 style={{ color: 'var(--accent)' }}
               >
-                Админ
+                {t('nav.admin')}
               </NavLink>
             )}
           </nav>
 
           {/* Right side */}
-          <div className="hidden items-center gap-2.5 lg:flex">
+          <div className="hidden items-center gap-2 lg:flex">
+            <LanguageToggle />
             <button
               onClick={() => setSearchOpen(true)}
-              title="Поиск (⌘K)"
-              className="hidden items-center gap-2 rounded-pill border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-[13px] text-[var(--text-3)] transition hover:border-[var(--line-strong)] hover:text-[var(--text)] xl:inline-flex"
-            >
-              <Search className="h-3.5 w-3.5" />
-              <span>Поиск</span>
-              <kbd className="rounded-sm border border-[var(--line-strong)] bg-[var(--surface-3)] px-1.5 py-0.5 font-mono text-[10px]">
-                ⌘K
-              </kbd>
-            </button>
-            <button
-              onClick={() => setSearchOpen(true)}
-              aria-label="Поиск"
-              className="btn btn-icon xl:hidden"
+              aria-label={t('header.search')}
+              title={`${t('header.search')} (⌘K)`}
+              className="btn btn-icon"
             >
               <Search className="h-4 w-4" />
             </button>
 
             {user ? (
               <>
-                <NavLink to="/history" className="flex items-center" aria-label="Кабинет">
+                <NavLink to="/account" className="flex items-center" aria-label={t('nav.account')}>
                   <span className="header-avatar">
                     {displayName.charAt(0).toUpperCase()}
                   </span>
@@ -121,8 +115,8 @@ export const Layout = () => {
                 <button
                   onClick={logout}
                   className="btn btn-icon"
-                  title="Выйти"
-                  aria-label="Выйти"
+                  title={t('header.signout')}
+                  aria-label={t('header.signout')}
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -130,7 +124,7 @@ export const Layout = () => {
             ) : (
               <button onClick={() => navigate('/auth')} className="btn btn-primary">
                 <LogIn className="h-4 w-4" />
-                Войти
+                {t('header.signin')}
               </button>
             )}
           </div>
@@ -165,7 +159,7 @@ export const Layout = () => {
                       }`
                     }
                   >
-                    {item.label}
+                    {t(item.tKey)}
                   </NavLink>
                 ))}
               {isAdmin && (
@@ -173,20 +167,23 @@ export const Layout = () => {
                   to="/admin"
                   className="rounded-md px-4 py-3 text-sm font-medium text-[var(--accent)] hover:bg-[var(--surface)]"
                 >
-                  Админ
+                  {t('nav.admin')}
                 </NavLink>
               )}
-              {!user ? (
-                <button onClick={() => navigate('/auth')} className="btn btn-primary mt-3">
-                  <LogIn className="h-4 w-4" />
-                  Войти
-                </button>
-              ) : (
-                <button onClick={logout} className="btn mt-3">
-                  <LogOut className="h-4 w-4" />
-                  Выйти
-                </button>
-              )}
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <LanguageToggle />
+                {!user ? (
+                  <button onClick={() => navigate('/auth')} className="btn btn-primary flex-1 justify-center">
+                    <LogIn className="h-4 w-4" />
+                    {t('header.signin')}
+                  </button>
+                ) : (
+                  <button onClick={logout} className="btn flex-1 justify-center">
+                    <LogOut className="h-4 w-4" />
+                    {t('header.signout')}
+                  </button>
+                )}
+              </div>
             </nav>
           </div>
         )}
