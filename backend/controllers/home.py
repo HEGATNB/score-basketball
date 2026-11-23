@@ -1,12 +1,15 @@
-"""Home / dashboard data controller — aggregates featured content for the landing page."""
+"""Контроллер главной страницы: собирает избранные данные для панели сайта."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import logging
+from datetime import datetime, timezone
 
 from database import get_db
+from services.espn_provider import FeedUnavailable
 from services.match_service import MatchService
+from services.nba_feed import catalog_teams, get_portable_matches
 from services.team_service import TeamService
 from services.player_service import PlayerService
 
@@ -15,24 +18,34 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/summary")
-async def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """One-shot landing page payload: featured match, top teams, top players, headline stats."""
+def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Возвращает данные главной страницы: матч, лучшие команды и игроки, основные показатели."""
     try:
         match_service = MatchService(db)
         team_service = TeamService(db)
         player_service = PlayerService(db)
 
-        # Featured: pick the most recent upcoming match, fall back to recent finished
-        all_matches = match_service.get_all_matches(filters={}, skip=0, limit=20)
-        upcoming = [m for m in all_matches if m.get("status") != "finished"]
-        finished = [m for m in all_matches if m.get("status") == "finished"]
+        upcoming = match_service.get_all_matches({
+            "status": "scheduled",
+            "upcoming_from": datetime.now(timezone.utc).replace(tzinfo=None),
+        }, limit=10)
+        finished = match_service.get_all_matches({"status": "finished"}, limit=10)
+        schedule_unavailable = False
+        if not upcoming or not finished:
+            try:
+                live_matches = get_portable_matches(None, 0, 200)
+                upcoming = upcoming or [game for game in reversed(live_matches) if game["status"] == "scheduled"][:10]
+                finished = finished or [game for game in live_matches if game["status"] == "finished"][:10]
+            except FeedUnavailable:
+                schedule_unavailable = not upcoming and not finished
         featured_match = (upcoming[0] if upcoming else (finished[0] if finished else None))
 
-        # Top teams by wins
-        all_teams = team_service.get_all_teams(skip=0, limit=200)
+        # Лучшие команды по числу побед
+        archive_teams = team_service.get_all_teams(skip=0, limit=200)
+        all_teams = archive_teams or catalog_teams()
         top_teams = sorted(all_teams, key=lambda t: (t.get("wins", 0) or 0), reverse=True)[:6]
 
-        # Top players (scoring leaders)
+        # Лучшие игроки по набранным очкам
         try:
             top_players = player_service.get_all_players(
                 team_abbrev=None,
@@ -43,7 +56,7 @@ async def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
                 sort_order="desc",
                 skip=0,
                 limit=16,
-            )
+            ) if archive_teams else []
         except Exception as e:
             logger.warning(f"Player leaderboard fetch failed: {e}")
             top_players = []
@@ -52,11 +65,12 @@ async def get_home_summary(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "featuredMatch": featured_match,
             "upcomingMatches": upcoming[:6],
             "recentMatches": finished[:6],
+            "scheduleUnavailable": schedule_unavailable,
             "topTeams": top_teams,
             "topPlayers": top_players,
             "totals": {
                 "teams": len(all_teams),
-                "matches": len(all_matches),
+                "matches": len(upcoming) + len(finished),
                 "upcoming": len(upcoming),
                 "finished": len(finished),
             },
@@ -75,7 +89,7 @@ async def get_leaderboard(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    """League leaderboard for the given category — points, rebounds, assists."""
+    """Рейтинг игроков лиги по выбранной категории: очки, подборы или передачи."""
     if category not in ("pts", "reb", "ast", "stl", "blk"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -94,21 +108,22 @@ async def get_leaderboard(
         logger.error(f"Leaderboard fetch failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Leaderboard failed: {str(e)}",
+            detail="Leaderboard failed",
         )
 
 
 @router.get("/search")
-async def search_global(
+def search_global(
     q: str = Query(..., min_length=2, description="Search term"),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Global search across teams and players."""
+    """Глобальный поиск по командам и игрокам."""
     try:
         team_service = TeamService(db)
         player_service = PlayerService(db)
 
-        all_teams = team_service.get_all_teams(skip=0, limit=200)
+        archive_teams = team_service.get_all_teams(skip=0, limit=200)
+        all_teams = archive_teams or catalog_teams()
         query_lc = q.strip().lower()
         team_hits = [
             t
@@ -128,7 +143,7 @@ async def search_global(
                 sort_order="desc",
                 skip=0,
                 limit=10,
-            )
+            ) if archive_teams else []
         except Exception:
             player_hits = []
 

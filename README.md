@@ -1,157 +1,136 @@
 # SCORE - basketball prediction website
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)]()
+[![GitHub issues](https://img.shields.io/github/issues/HEGATNB/kyrsach-basketball?style=flat-square)](https://github.com/HEGATNB/score-basketball/issues)
+[![Your feedback is greatly appreciated](https://img.shields.io/badge/feedback-welcome-blue?style=flat-square)](https://github.com/HEGATNB/score-basketball/issues/new)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/HEGATNB/kyrsach-basketball?style=flat-square)](https://github.com/HEGATNB/score-basketball/pulls)
+## Обзор
 
-> Веб-приложение для просмотра статистики баскетбольных матчей и игроков
+SCORE — это веб-приложение для анализа статистики баскетбольных матчей NBA и прогнозирования исходов с использованием нейросетевых моделей. Система предоставляет доступ к статистике команд и игроков, live-данным с ESPN API и машинному обучению.
 
-## О проекте
+Технологический стек: Python / FastAPI (бэкенд), TypeScript / React (фронтенд), PostgreSQL (база данных), Redis (кэш/авторизация), TensorFlow/Keras (ML-модель), Docker (контейнеризация).
+## Возможности
 
-Проект представляет собой веб-приложение с бэкендом на **FastAPI** и фронтендом на **React + Vite**.  
-Данные о матчах и игроках хранятся в SQLite базе данных.
+На данный момент SCORE умеет:
 
-### Возможности
-- Просмотр списка игроков и их статистики
-- Поиск и фильтрация матчей
-- Детальная информация о каждом матче
-- Адаптивный интерфейс
-- ИИ предсказывающий матчи
+    [stats] Просмотр команд и игроков NBA с фильтрацией по сезонам и сортировкой
 
----
+    [predict] Генерация прогнозов исходов матчей с использованием нейросетевой модели (EMA-обработка, 10 статистических категорий)
 
-## Быстрый старт
+    [live] Отображение актуального счёта матчей через ESPN API
 
-### 1. Клонирование репозитория
+    [auth] Регистрация пользователей и JWT-аутентификация с ролевой моделью (гость/пользователь/оператор/администратор)
+
+    [history] Отслеживание точности прогнозов, серий, рейтинга и начисление баллов
+
+    [admin] Управление пользователями, просмотр аудита, контроль импорта и выгрузка матчей в CSV
+
+    [analytics] Визуализация метрик модели (точность, loss, веса факторов)
+
+## Локальный запуск
+
+SCORE использует существующую базу PostgreSQL со схемой и данными NBA. Для запуска через Docker Compose создайте файл `backend/env`.
+
+```dotenv
+ENVIRONMENT=development
+DB_HOST=host.docker.internal
+DB_PORT=5432
+DB_NAME=nba
+DB_USER=<роль PostgreSQL>
+DB_PASSWORD=<пароль PostgreSQL>
+REDIS_PASSWORD=<отдельный случайный пароль>
+JWT_SECRET=<отдельный случайный ключ из 32 байтов или больше>
+JWT_EXPIRES_IN=30m
 ```
-bash
-git clone https://github.com/HEGATNB/kyrsach-basketball.git
-cd kyrsach-basketball
-git checkout feature/hegatnb
+
+Создайте два независимых секрета, например командой `python -c "import secrets; print(secrets.token_urlsafe(48))"`, выполненной дважды. Файл `backend/env` хранится локально и исключён из Docker-образа.
+
+```sh
+docker compose --env-file backend/env up -d --build
+docker compose --env-file backend/env ps
 ```
-# Бэкенд (FastAPI)
 
-### 1. Создать и активировать виртуальное окружение:
+Веб-интерфейс доступен по `http://localhost`. Проверка API доступна по `/health`. Ответ `503` означает, что API не может подключиться к PostgreSQL. Redis и FastAPI доступны внутри сети Compose.
 
-   ```
-   python -m venv .venv
-   .venv\Scripts\activate   # Windows
-   # source .venv/bin/activate   # Mac/Linux
-   ```
-### 2. Установить зависимости:
+Для просмотра Swagger запустите FastAPI напрямую в окружении `development` на локальном интерфейсе. Nginx закрывает маршруты документации.
 
-   ``` 
-   cd backend
-   pip install -r requirements.txt
-   ``` 
-### 3. Запустить сервер:
+Без архивной базы страницы команд, новости, актуальные составы и ближайшее расписание работают через ESPN. История игроков, учётные записи и сохранённые прогнозы используют PostgreSQL. Для предпросмотра прогнозов требуется Redis, а при отсутствии архивной статистики вероятность вычисляется по текущей таблице ESPN.
 
-   ```
-   uvicorn main:app --reload --port 8000
-   ``` 
-# Для начала работы
-- Создать виртуальное окружение<br>
-```python -m venv .venv```
-<br></br>
-- Активировать виртуальное окружение<br>
-```.venv\Scripts\activate```
-<br></br>
-- Перейти в папку бэкенда<br>
-```cd backend```
-<br></br>
-- Установить зависимости<br>
-```pip install -r requirements.txt```
-<br></br>
-- Скачать базу и перенести в нужное место<br>
-*(База должна лежать в: backend/data/nba.sqlite)*
-<br></br>
-- Запустить сервер<br>
-```uvicorn main:app --reload --port 8000```
-<br></br>
-- Перейти в корневую папку<br>
-```cd ../```
-<br></br>
-- Из корня проекта перейти в папку фронтенда<br>
-```cd frontend```
-<br></br>
-- Установить зависимости<br>
-```npm install```
-<br></br>
-- Запустить дев-сервер<br>
-```npm run dev```
-<br></br>
-____
-____
+## Render и Neon
 
-# Basketball Stats Hub
+- Задайте `ENVIRONMENT=production`, новый `JWT_SECRET` и `DATABASE_URL` с `sslmode=require` или более строгой проверкой TLS. API, импорт и обучение используют одну строку подключения.
+- Укажите приватный `REDIS_URL` или задайте `REDIS_HOST`, `REDIS_PORT` и `REDIS_PASSWORD`. При отказе Redis защищённые и ограничиваемые маршруты возвращают `503`.
+- При раздельном размещении клиента и API задайте точные origin через `ALLOWED_ORIGINS`, разделяя их запятой. CORS обслуживает FastAPI. HTTPS, редирект HTTP и HSTS проверяются на внешнем ingress. На платформе укажите доверенные прокси через `FORWARDED_ALLOW_IPS`, чтобы лимиты учитывали IP клиента. В Compose заголовок клиента формирует Nginx внутри закрытой сети.
+- Для публикации интерфейса в подпапке задайте `VITE_BASE_PATH=/score/` при сборке. Направьте запросы к страницам этой подпапки на её `index.html`, а к API — на `/api` или адрес из `VITE_API_URL`. При локальной разработке Vite проксирует `/api` на `VITE_PROXY_TARGET`.
+- Запускайте один процесс и одну реплику API, пока планировщик и загруженная модель живут в процессе. Для масштабирования сначала вынесите планировщик в отдельный сервис. Для сохранения обученной модели примонтируйте постоянное хранилище по `MODEL_DIR`.
+- При переходе со старой версии замените ранее раскрытые JWT и пароль БД в хранилищах секретов. Смена ключа инвалидирует текущие сеансы. Перевыпустите сертификат, если использовался прежний приватный ключ, и отзовите его по процедуре центра сертификации.
 
-> Web application for viewing basketball match and player statistics
+## Обновления данных и резервные копии
 
-## About
+Администраторы и операторы могут открыть раздел «Управление», проверить время последнего успешного импорта, увидеть просроченные результаты и запустить импорт. Переобучение доступно администратору. Импорт по расписанию запускается в 23:59 UTC, переобучение проходит в воскресенье в 00:30 UTC. Панель показывает время в часовом поясе браузера.
 
-The project is a web application with a **FastAPI** backend and a **React + Vite** frontend.  
-Match and player data is stored in an SQLite database.
+`GET /api/admin/matches.csv?start=2026-11-01&end=2026-11-07` отдаёт CSV матчей за период до 31 календарного дня. Запрос требует Bearer-токен администратора или оператора. В CSV входят идентификаторы и даты матчей, команды, счёт и исход.
 
-### Features
-- View list of players and their statistics
-- Search and filter matches
-- Detailed information about each match
-- Responsive interface
-- AI-powered match prediction
+Live-данные и импорт используют ESPN по HTTPS. При временной недоступности live-панель отображает сохранённый счёт и время его получения. Обзоры берутся из сводок ESPN, также доступны ссылки на страницы ESPN и поиск на YouTube. Для коммерческой интеграции отдельно согласуйте права на данные и доступ к лицензированному источнику.
 
----
+Лента по команде использует теги ESPN. Статьи доступны по ссылкам с `?article=…`, фильтр — по `?team=LAL`. Опциональная поправка к прогнозу использует свежие статусы Out из сводки конкретной игры на ближайшие 72 часа. Разница в одно подтверждённое отсутствие меняет вероятность на 1,5 процентного пункта, предел — 6. Поправка экспериментальная и отображается рядом с базовой вероятностью.
 
-## Quick Start
+Фото на главной — Андре Игудала в матче сборных США и Доминиканской Республики, снимок Дэниела Хьюза из архива [DVIDS](https://www.dvidshub.net/image/624088/usa-vs-dominican-republic-exhibition-game).
 
-### 1. Clone the repository
+Админ-панель показывает историю старых JSON-копий. Для резервного копирования используйте снимки Neon или штатный `pg_dump` с отдельной ролью. Храните зашифрованные копии вне контейнера. Проверяйте восстановление на выделенной пустой базе staging и проверяйте целостность схемы, число строк и вход пользователей до применения процедуры к production.
+
+## Проверки
+
+```sh
+cd backend
+python -m pip install -r requirements.txt pytest
+python -m pytest tests
 ```
-bash
-git clone https://github.com/HEGATNB/kyrsach-basketball.git
-cd kyrsach-basketball
-git checkout feature/hegatnb
-```
-# Backend (FastAPI)
 
-### 1. Create and activate a virtual environment:
+```sh
+cd frontend
+npm ci
+npx tsc --noEmit -p tsconfig.app.json
+npm run build
+npm audit
 ```
-   python -m venv .venv
-   .venv\Scripts\activate   # Windows
-   # source .venv/bin/activate   # Mac/Linux
-   ```
 
-### 2. Install dependencies:
-```
-    cd backend
-    pip install -r requirements.txt
-```
-### 3. Start the server:
-```
-uvicorn main:app --reload --port 8000
-```
-# Getting Started
-- Create a virtual environment<br>
-```python -m venv .venv```
-<br></br>
-- Activate the virtual environment<br>
-```.venv\Scripts\activate```
-<br></br>
-- Navigate to the backend folder<br>
-```cd backend```
-<br></br>
-- Install dependencies<br>
-```pip install -r requirements.txt```
-<br></br>
-- Download the database and place it in the correct location<br>
-*(Database should be located at: backend/data/nba.sqlite)*
-<br></br>
-- Start the server<br>
-```uvicorn main:app --reload --port 8000```
-<br></br>
-- Navigate back to the root folder<br>
-```cd ../```
-<br></br>
-- From the root, navigate to the frontend folder<br>
-```cd frontend```
-<br></br>
-- Install dependencies<br>
-```npm install```
-<br></br>
-- Start the development server<br>
-```npm run dev```
-<br></br>
+GitHub Actions проверяет тесты, сборку, зависимости Python и npm, исходники Python через Bandit и историю Git через Gitleaks. Устранение исторических находок и повторная публикация веток выполняются владельцем репозитория.
+
+## Архитектура
+
+
+Browser ->Nginx(reverse proxy) -> FastAPI (бэкенд) -> PostgreSQL/Redis<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;|<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;└── TensorFlow модель
+
+## Участие в разработке
+
+Мы приветствуем вклад в развитие SCORE. Вы можете помочь следующими способами:
+
+    Создать Issue с предложениями по улучшению или сообщить об ошибке;
+
+    Сделать форк репозитория и отправить Pull Request;
+
+    Улучшить документацию.
+
+Рекомендации по коду:
+
+    Код на Python должен соответствовать стандарту PEP 8;
+
+    Код на TypeScript должен соответствовать правилам ESLint;
+
+    Pull Request должны содержать тесты для новой функциональности.
+
+## Авторы
+
+    Говорунов Д.Д. (Тимлид, Архитектор)
+
+    Нижегородов Д.С. (Системный аналитик)
+
+    Рыбаков М.М. (Backend-разработчик)
+
+    Журавлев А.И. (Frontend-разработчик)
+
+    Карапетян А.Л. (QA-инженер)
+
+РТУ МИРЭА, 2026

@@ -1,63 +1,44 @@
 from fastapi import Request, HTTPException, status
-from fastapi.security import HTTPBearer
-import sys
-import os
-from datetime import datetime
-from jose import jwt  # вместо import jwt
+from redis import RedisError
+from starlette.concurrency import run_in_threadpool
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scripts.auth import verify_token, TokenPayload
+from scripts.auth import verify_token
 from services.redis_service import redis_service
-from config import config
 
-security = HTTPBearer()
 
-# Извлечь токен из заголовка
 def extract_token_from_request(request: Request) -> str | None:
-    authorization = request.headers.get("Authorization")
-    if not authorization:
-        return None
-    if not authorization.startswith("Bearer "):
-        return None
-    return authorization[7:]
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    return token if scheme.lower() == "bearer" and token else None
 
-# Получить время заголовка из полезной нагрузки
-def get_token_issued_at(token: str) -> float | None:
-    try:
-        payload = jwt.decode(token, config.JWT_SECRET, algorithms=["HS256"], options={"verify_exp": False})
-        return payload.get("iat", None)
-    except:
-        return None
 
-# Получение пользователя из токена с проверкой ЧС
 async def get_current_user(request: Request):
     token = extract_token_from_request(request)
-
-    if not token:
-        print("Нет заголовка Authorization")
+    payload = verify_token(token) if token else None
+    if payload is None:
         return None
 
-    print(f"Получен токен: {token[:20]}...")
+    try:
+        revoked = await run_in_threadpool(
+            redis_service.is_session_revoked, payload.token_id, payload.user_id, payload.issued_at,
+        )
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="Session service temporarily unavailable") from exc
+    return None if revoked else payload
 
-    # Проверка в черном списке
-    if redis_service.is_available() and redis_service.is_token_blacklisted(token):
-        print("Токен в черном списке")
-        return None
 
-    payload = verify_token(token)
+async def enforce_rate_limit(request: Request, scope: str, limit: int, period: int, identity=None):
+    identity = identity if identity is not None else (request.client.host if request.client else "unknown")
+    try:
+        allowed, retry_after = await run_in_threadpool(
+            redis_service.check_rate_limit, f"{scope}:{identity}", limit, period,
+        )
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="Rate limit service temporarily unavailable") from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429, detail="Too many requests", headers={"Retry-After": str(retry_after)},
+        )
 
-    if not payload:
-        print("Токен недействителен")
-        return None
-
-    # Проверка, не были ли отозваны все токены пользователя
-    iat = get_token_issued_at(token)
-    if iat and redis_service.is_available() and redis_service.is_user_tokens_revoked(payload.user_id, iat):
-        print(f"Токены пользователя {payload.user_id} были отозваны")
-        return None
-
-    print(f"Пользователь аутентифицирован: ID={payload.user_id}, Email={payload.email}")
-    return payload
 
 # Проверка роли администратора
 async def require_admin(request: Request):

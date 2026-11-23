@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Cpu, Lock, Sparkles, Swords, Zap } from 'lucide-react';
-import { apiRequest, type Team } from '@/shared/api/client';
+import { ArrowRight, Cpu, Swords, Zap } from 'lucide-react';
+import { apiRequest, type Team, type PredictionContext } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
+import { liveApi, type LiveNewsItem } from '@/shared/api/live';
+import { PredictionContextSummary } from '@/shared/ui/PredictionContextSummary';
+
+interface ForecastPreview {
+  probabilityTeam1: number;
+  probabilityTeam2: number;
+  context?: PredictionContext | null;
+}
 
 export const PredictionNewPage = () => {
   const { user } = useAuth();
@@ -16,6 +24,28 @@ export const PredictionNewPage = () => {
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [includeContext, setIncludeContext] = useState(searchParams.get('context') === '1');
+  const [preview, setPreview] = useState<{ key: string; value?: ForecastPreview } | null>(null);
+  const [news, setNews] = useState<LiveNewsItem[] | null | undefined>(undefined);
+  const [retry, setRetry] = useState(0);
+  const previewKey = [team1Id, team2Id, includeContext].join(':');
+
+  useEffect(() => {
+    if (!team1Id || !team2Id || team1Id === team2Id) return;
+    const request = new AbortController();
+    const params = new URLSearchParams({ team1: team1Id, team2: team2Id, include_context: String(includeContext) });
+    apiRequest<ForecastPreview>('/predict/preview?' + params.toString(), { signal: request.signal }, false)
+      .then((value) => setPreview({ key: previewKey, value }))
+      .catch(() => { if (!request.signal.aborted) setPreview({ key: previewKey }); });
+    return () => request.abort();
+  }, [team1Id, team2Id, includeContext, previewKey, retry]);
+
+  useEffect(() => {
+    let active = true;
+    liveApi.newsFeed().then((feed) => { if (active) setNews(feed.items); }).catch(() => { if (active) setNews(null); });
+    return () => { active = false; };
+  }, []);
+
 
   useEffect(() => {
     apiRequest<Team[]>('/teams')
@@ -40,6 +70,11 @@ export const PredictionNewPage = () => {
       return;
     }
 
+    if (!user) {
+      const query = new URLSearchParams({ team1: team1Id, team2: team2Id, context: includeContext ? '1' : '0' });
+      navigate('/auth', { state: { from: { pathname: '/prediction/new', search: '?' + query.toString() } } });
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -47,7 +82,7 @@ export const PredictionNewPage = () => {
         '/predict',
         {
           method: 'POST',
-          body: JSON.stringify({ team1Id: Number(team1Id), team2Id: Number(team2Id) }),
+          body: JSON.stringify({ team1Id: Number(team1Id), team2Id: Number(team2Id), includeContext }),
         },
         false,
       );
@@ -59,60 +94,27 @@ export const PredictionNewPage = () => {
     }
   };
 
-  if (!user) {
-    return (
-      <section className="flex min-h-[80vh] items-center justify-center">
-        <div className="container-x">
-          <div className="card mx-auto max-w-2xl p-10 text-center sm:p-14">
-            <div
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-md"
-              style={{ background: 'rgba(255,90,31,0.15)', color: 'var(--accent)' }}
-            >
-              <Lock className="h-6 w-6" />
-            </div>
-            <h1
-              className="display-h mt-6"
-              style={{ fontSize: 'clamp(36px, 5vw, 56px)' }}
-            >
-              ВОЙДИ <em>ЧТОБЫ</em> ПРОГНОЗИРОВАТЬ
-            </h1>
-            <p className="mx-auto mt-4 max-w-md text-sm text-[var(--text-3)]">
-              Прогнозы привязаны к аккаунту, чтобы сохранять историю и копить XP.
-            </p>
-            <Link to="/auth" className="btn btn-primary mt-7">
-              <Sparkles className="h-4 w-4" />
-              Войти
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   if (loadingTeams) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <LoadingSpinner size="md" label="Готовим движок" />
+        <LoadingSpinner size="md" label="Загружаем команды" />
       </div>
     );
   }
 
-  const canSubmit = team1Id && team2Id && team1Id !== team2Id && !submitting;
+  const hasMatchup = Boolean(selected.home && selected.away && team1Id !== team2Id);
+  const canSubmit = hasMatchup && !submitting;
+  const selectedPreview = preview?.key === previewKey ? preview : null;
+  const teamCodes = [selected.home?.abbrev, selected.away?.abbrev];
+  const related = (news ?? []).filter((item) => item.teams?.some((code) => teamCodes.includes(code))).slice(0, 4);
+
 
   return (
     <section className="section">
       <div className="container-x">
         <div className="section-head">
-          <div className="flex flex-col gap-3">
-            <span className="eyebrow"><span className="dot" />AI ENGINE · MATCHUP</span>
-            <h2>
-              СОБЕРИ <em>МАТЧАП</em>.<br />ОТДАЙ ИИ.
-            </h2>
-          </div>
-          <p className="lead">
-            Выбери две команды. Модель прочитает форму, EMA-сглаженные атаку/защиту и вернёт вероятность с ожидаемым счётом.
-          </p>
+          <h1 className="display-h text-4xl sm:text-6xl">Прогноз на матч</h1>
+          <p className="lead">Выберите команды, чтобы сравнить шансы и посмотреть новости перед игрой.</p>
         </div>
 
         {/* Matchup builder */}
@@ -130,8 +132,8 @@ export const PredictionNewPage = () => {
             <div
               className="flex h-16 w-16 items-center justify-center rounded-md"
               style={{
-                background: 'rgba(255,90,31,0.10)',
-                border: '1px solid rgba(255,90,31,0.30)',
+                background: 'rgba(210,106,52,0.10)',
+                border: '1px solid rgba(210,106,52,0.30)',
                 color: 'var(--accent)',
               }}
             >
@@ -165,59 +167,55 @@ export const PredictionNewPage = () => {
           </div>
         )}
 
-        {/* Submit */}
-        <div
-          className="card mt-10 overflow-hidden p-8 sm:p-10"
-          style={{
-            background:
-              'linear-gradient(120deg, rgba(255,90,31,0.10), transparent 50%), linear-gradient(240deg, rgba(255,184,0,0.06), transparent 60%), var(--surface)',
-          }}
-        >
-          <div className="grid items-end gap-8 lg:grid-cols-[1fr_auto]">
-            <div>
-              <span className="tag tag-gold">
-                <Sparkles className="h-3 w-3" />
-                ГОТОВ
-              </span>
-              <h3 className="display-h mt-5" style={{ fontSize: 'clamp(36px, 5vw, 56px)' }}>
-                ЗАПУСКАЙ <em>ДВИЖОК</em>
-              </h3>
-              <p className="mt-3 max-w-[480px] text-sm leading-relaxed text-[var(--text-2)]">
-                Прогноз сохранится в твоей истории, моментально посчитается и попадёт в недельный рейтинг.
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <span className="tag">EMA features</span>
-                <span className="tag">DNN classifier</span>
-                <span className="tag">Калиброванная вероятность</span>
-                <span className="tag">Ожидаемый счёт</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handlePredict}
-              disabled={!canSubmit}
-              className="btn btn-primary group"
-              style={{ height: 64, padding: '0 30px', fontSize: 15 }}
-            >
-              {submitting ? (
-                <>
-                  <span
-                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current"
-                    style={{ borderTopColor: 'transparent' }}
-                  />
-                  Запускаем модель…
-                </>
-              ) : (
-                <>
-                  <Zap className="h-5 w-5" />
-                  Получить прогноз
-                  <ArrowRight className="h-5 w-5 arrow" />
-                </>
+        {hasMatchup && (
+          <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+            <section className="score-panel space-y-4 p-5 sm:p-6">
+              <h2 className="m-0 font-display text-3xl">Вероятность победы</h2>
+              <label className="flex items-center gap-3 text-sm">
+                <input type="checkbox" checked={includeContext} onChange={(event) => setIncludeContext(event.target.checked)}
+                  className="h-4 w-4 accent-[var(--accent)]" />
+                Учесть подтверждённые потери состава
+              </label>
+              {!selectedPreview && <p className="text-sm text-[var(--text-2)]" role="status">Рассчитываем оценку…</p>}
+              {selectedPreview && !selectedPreview.value && (
+                <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--text-2)]">
+                  <p role="status">Оценка временно недоступна.</p>
+                  <button type="button" className="btn btn-secondary" onClick={() => {
+                    setPreview(null);
+                    setRetry((value) => value + 1);
+                  }}>Повторить</button>
+                </div>
               )}
-            </button>
+              {selectedPreview?.value?.context ? (
+                <PredictionContextSummary context={selectedPreview.value.context} home={selected.home?.abbrev} away={selected.away?.abbrev} />
+              ) : selectedPreview?.value && (
+                <p className="font-mono text-lg">
+                  {selected.home?.abbrev} {selectedPreview.value.probabilityTeam1}% · {selected.away?.abbrev} {selectedPreview.value.probabilityTeam2}%
+                </p>
+              )}
+            </section>
+            <section className="score-panel space-y-3 p-5 sm:p-6">
+              <h2 className="m-0 font-display text-3xl">Новости команд</h2>
+              {related.length ? (
+                <ul className="space-y-3">
+                  {related.map((item) => <li key={item.id}>
+                    <Link className="text-sm text-[var(--accent-strong)]" to={'/news?article=' + item.id}>{item.title}</Link>
+                  </li>)}
+                </ul>
+              ) : <p className="text-sm text-[var(--text-2)]">
+                {news === undefined ? 'Загружаем новости…' : news === null ? 'Лента временно недоступна.' : 'В свежей ленте нет материалов по выбранным командам.'}
+              </p>}
+            </section>
           </div>
+        )}
+
+        <div className="mt-7 flex flex-wrap items-center justify-between gap-4">
+          <span className="text-sm text-[var(--text-2)]">Прогноз сохранится в истории аккаунта.</span>
+          <button type="button" onClick={handlePredict} disabled={!canSubmit} className="btn btn-primary">
+            <Zap size={17} aria-hidden="true" />
+            {submitting ? 'Сохраняем…' : user ? 'Сохранить прогноз' : 'Войти и сохранить'}
+            <ArrowRight size={17} aria-hidden="true" />
+          </button>
         </div>
       </div>
     </section>
@@ -258,9 +256,9 @@ function TeamSelector({ label, value, onChange, teams, selected, disabledTeamId 
             <div className="mt-0.5 text-xs text-[var(--text-3)]">{selected.city || '—'}</div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <Stat label="REC" value={`${selected.wins}–${selected.losses}`} />
-              <Stat label="PF" value={selected.avgPointsFor.toFixed(1)} />
-              <Stat label="PA" value={selected.avgPointsAgainst.toFixed(1)} />
+              <Stat label="В–П" value={selected.hasStats === false ? '—' : `${selected.wins}–${selected.losses}`} />
+              <Stat label="PF" value={selected.avgPointsFor ? selected.avgPointsFor.toFixed(1) : '—'} />
+              <Stat label="PA" value={selected.avgPointsAgainst ? selected.avgPointsAgainst.toFixed(1) : '—'} />
             </div>
           </div>
         </div>

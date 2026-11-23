@@ -5,6 +5,8 @@ from typing import List, Optional
 from database import get_db
 import schemas
 from services.team_service import TeamService
+from services.nba_feed import catalog_teams, get_catalog_team
+from sqlalchemy.exc import SQLAlchemyError
 from services.audit_service import AuditService
 from middleware.auth import require_admin_or_operator, require_admin, get_current_user
 
@@ -12,24 +14,28 @@ router = APIRouter()
 
 @router.get("", response_model=List[schemas.TeamResponse])
 @router.get("/", response_model=List[schemas.TeamResponse])
-async def get_all_teams(
-        skip: int = 0,
-        limit: int = 100,
+def get_all_teams(
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=200),
         db: Session = Depends(get_db)
 ):
     team_service = TeamService(db)
-    teams = team_service.get_all_teams(skip=skip, limit=limit)
-
+    teams = team_service.get_all_teams(skip=0, limit=200)
     if not teams:
-        return []
-
-    return teams
+        teams = catalog_teams()
+    return teams[skip:skip + limit]
 
 
 @router.get("/{team_id}", response_model=schemas.TeamResponse)
-async def get_team_by_id(team_id: int, db: Session = Depends(get_db)):
+def get_team_by_id(team_id: int, db: Session = Depends(get_db)):
     team_service = TeamService(db)
-    team = team_service.get_team_by_id(team_id)
+    try:
+        team = team_service.get_team_by_id(team_id)
+    except SQLAlchemyError:
+        db.rollback()
+        team = None
+    if not team:
+        team = get_catalog_team(team_id)
 
     if not team:
         raise HTTPException(
@@ -80,7 +86,7 @@ async def create_team(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating team: {str(e)}"
+            detail="Error creating team"
         )
 
 
@@ -124,7 +130,7 @@ async def update_team(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating team: {str(e)}"
+            detail="Error updating team"
         )
 
 
@@ -167,5 +173,5 @@ async def delete_team(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting team: {str(e)}"
+            detail="Error deleting team"
         )

@@ -1,15 +1,19 @@
 # backend/controllers/admin.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from datetime import datetime
-from typing import List, Dict, Any
+import csv
+import io
+from datetime import date, datetime, timedelta
+from typing import List
+from starlette.concurrency import run_in_threadpool
 
 from database import get_db
 from services.audit_service import AuditService
 from services.auth_service import AuthService
 from services.redis_service import redis_service
-from middleware.auth import require_admin
+from middleware.auth import require_admin, require_admin_or_operator
 import schemas
 
 router = APIRouter()
@@ -21,17 +25,34 @@ async def toggle_user_block(
         request: Request,
         db: Session = Depends(get_db)
 ):
-    await require_admin(request)
+    current_user = await require_admin(request)
 
     try:
         body = await request.json()
-        is_blocked = body.get("isBlocked", False)
+        is_blocked = bool(body.get("isBlocked", body.get("is_blocked", False)))
 
-        current_user = await require_admin(request)
         if current_user.user_id == user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You cannot block yourself"
+                detail="You cannot block your own account"
+            )
+
+        target = db.execute(
+            text("SELECT id, email, name, username, role, is_blocked, created_at FROM users WHERE id = :user_id"),
+            {"user_id": user_id}
+        ).fetchone()
+
+        if not target:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User was not found"
+            )
+
+        target_data = dict(target._mapping)
+        if target_data.get("role") == "admin" and is_blocked:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An administrator cannot block another administrator"
             )
 
         # Обновляем статус в БД
@@ -39,12 +60,10 @@ async def toggle_user_block(
             text("UPDATE users SET is_blocked = :is_blocked WHERE id = :user_id"),
             {"is_blocked": is_blocked, "user_id": user_id}
         )
+        if is_blocked and not await run_in_threadpool(redis_service.revoke_all_user_tokens, user_id):
+            db.rollback()
+            raise HTTPException(status_code=503, detail="Could not revoke sessions")
         db.commit()
-
-        # Если пользователь заблокирован - отзываем все его токены
-        if is_blocked and redis_service.is_available():
-            redis_service.revoke_all_user_tokens(user_id)
-            print(f"✅ Все токены пользователя {user_id} отозваны")
 
         # Получаем обновленного пользователя
         result = db.execute(
@@ -55,7 +74,7 @@ async def toggle_user_block(
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                detail="User was not found"
             )
 
         user_data = dict(result._mapping)
@@ -67,7 +86,7 @@ async def toggle_user_block(
             action="BLOCK_USER" if is_blocked else "UNBLOCK_USER",
             entity="User",
             entity_id=user_id,
-            details={"user_id": user_id, "email": user_data["email"], "tokens_revoked": is_blocked},
+            details={"user_id": user_id, "tokens_revoked": is_blocked},
             ip_address=request.client.host if request.client else None
         )
 
@@ -87,7 +106,7 @@ async def toggle_user_block(
         print(f"Error toggling user block: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating user: {str(e)}"
+            detail="Error updating user"
         )
 
 
@@ -119,15 +138,12 @@ async def get_admin_stats(
         total_backups = db.execute(text("SELECT COUNT(*) FROM backups")).scalar() if check_table_exists("backups") else 0
 
         accuracy = None
-        if check_table_exists("model_metrics"):
-            result = db.execute(text("""
-                SELECT validation_accuracy FROM model_metrics 
-                WHERE status = 'completed' 
-                ORDER BY training_date DESC 
-                LIMIT 1
-            """)).fetchone()
-            if result:
-                accuracy = result[0] * 100 if result[0] else None
+        try:
+            from services.ai_service import AIService
+            model_stats = await AIService(db).get_model_stats()
+            accuracy = model_stats.get("accuracy")
+        except Exception as e:
+            print(f"Error getting live model accuracy for admin stats: {e}")
 
         last_backup_at = None
         if check_table_exists("backups"):
@@ -154,7 +170,7 @@ async def get_admin_stats(
         print(f"Error getting admin stats: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting stats: {str(e)}"
+            detail="Error getting stats"
         )
 
 
@@ -190,7 +206,7 @@ async def get_all_users(
         print(f"Error getting users: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting users: {str(e)}"
+            detail="Error getting users"
         )
 
 
@@ -212,115 +228,15 @@ async def get_audit_logs(
         print(f"Error getting audit logs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting logs: {str(e)}"
+            detail="Error getting logs"
         )
 
 
-@router.post("/backup")
-async def create_backup(
-        request: Request,
-        db: Session = Depends(get_db)
-):
-    await require_admin(request)
+@router.post("/backup", dependencies=[Depends(require_admin)])
+@router.post("/restore/{backup_id}", dependencies=[Depends(require_admin)])
+async def legacy_backup_operation():
+    raise HTTPException(status_code=410, detail="Use managed PostgreSQL backups")
 
-    try:
-        def check_table_exists(table_name: str) -> bool:
-            try:
-                result = db.execute(
-                    text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = :table_name)"),
-                    {"table_name": table_name}
-                ).scalar()
-                return result
-            except:
-                return False
-
-        if not check_table_exists("backups"):
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS backups (
-                    id SERIAL PRIMARY KEY,
-                    filename VARCHAR(255) NOT NULL,
-                    size INTEGER,
-                    type VARCHAR(50) DEFAULT 'manual',
-                    status VARCHAR(50) DEFAULT 'completed',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-            db.commit()
-
-        teams = db.execute(text("SELECT * FROM team")).fetchall()
-        users = db.execute(text("SELECT id, email, name, username, role, is_blocked, created_at FROM users")).fetchall()
-        matches = db.execute(text("SELECT * FROM game LIMIT 1000")).fetchall()
-        predictions = db.execute(text("SELECT * FROM predictions")).fetchall()
-
-        backup_data = {
-            "teams": [dict(row._mapping) for row in teams],
-            "users": [dict(row._mapping) for row in users],
-            "matches": [dict(row._mapping) for row in matches],
-            "predictions": [dict(row._mapping) for row in predictions],
-            "created_at": datetime.now().isoformat(),
-            "version": "1.0"
-        }
-
-        import json
-        import os
-
-        backup_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backups")
-        os.makedirs(backup_dir, exist_ok=True)
-
-        filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        filepath = os.path.join(backup_dir, filename)
-
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(backup_data, f, ensure_ascii=False, indent=2, default=str)
-
-        file_size = os.path.getsize(filepath)
-
-        result = db.execute(
-            text("""
-                INSERT INTO backups (filename, size, type, status, created_at)
-                VALUES (:filename, :size, :type, :status, :created_at)
-                RETURNING id
-            """),
-            {
-                "filename": filename,
-                "size": file_size,
-                "type": "manual",
-                "status": "completed",
-                "created_at": datetime.now()
-            }
-        )
-        db.commit()
-
-        backup_id = result.scalar()
-
-        audit = AuditService(db)
-        audit.log(
-            user_id=(await require_admin(request)).user_id,
-            action="CREATE_BACKUP",
-            entity="Backup",
-            entity_id=backup_id,
-            details={"filename": filename, "size": file_size},
-            ip_address=request.client.host if request.client else None
-        )
-
-        return {
-            "id": str(backup_id),
-            "filename": filename,
-            "size": file_size,
-            "type": "manual",
-            "status": "completed",
-            "createdAt": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        db.rollback()
-        print(f"Error creating backup: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating backup: {str(e)}"
-        )
-
-# Получение списка бэкапов
 
 @router.get("/backups", response_model=List[schemas.BackupResponse])
 async def get_backups(
@@ -330,6 +246,8 @@ async def get_backups(
     await require_admin(request)
 
     try:
+        if db.execute(text("SELECT to_regclass('public.backups')")).scalar() is None:
+            return []
         result = db.execute(text("""
             SELECT id, filename, size, type, status, created_at
             FROM backups
@@ -354,104 +272,37 @@ async def get_backups(
         print(f"Error getting backups: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting backups: {str(e)}"
+            detail="Error getting backups"
         )
 
-# Восстановление из бэкапа
 
-@router.post("/restore/{backup_id}")
-async def restore_backup(
-        backup_id: int,
-        request: Request,
-        db: Session = Depends(get_db)
-):
-    await require_admin(request)
+@router.get("/matches.csv", dependencies=[Depends(require_admin_or_operator)])
+def export_matches(start: date, end: date, db: Session = Depends(get_db)):
+    """Exports non-personal match data for at most 31 calendar days."""
+    if not timedelta(0) <= end - start < timedelta(days=31):
+        raise HTTPException(status_code=422, detail="Select a date range of up to 31 days")
+    rows = db.execute(text("""
+        SELECT game_id, game_date, team_abbreviation_home, team_abbreviation_away,
+               pts_home, pts_away, wl_home
+        FROM game
+        WHERE CAST(game_date AS date) BETWEEN :start AND :end
+        ORDER BY game_date, game_id
+    """), {"start": start, "end": end})
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(rows.keys())
+    for row in rows:
+        writer.writerow(escape_csv_cell(value) for value in row)
+    return Response(
+        output.getvalue(), media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="score-matches-{start}-{end}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
-    try:
-        result = db.execute(
-            text("SELECT filename FROM backups WHERE id = :id"),
-            {"id": backup_id}
-        ).fetchone()
 
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Бэкап не найден"
-            )
-
-        import json
-        import os
-
-        backup_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backups")
-        filepath = os.path.join(backup_dir, result[0])
-
-        if not os.path.exists(filepath):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Файл бэкапа не найден"
-            )
-
-        with open(filepath, 'r', encoding='utf-8') as f:
-            backup_data = json.load(f)
-
-        if "teams" in backup_data:
-            db.execute(text("TRUNCATE TABLE team RESTART IDENTITY CASCADE"))
-            db.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
-            db.execute(text("TRUNCATE TABLE game RESTART IDENTITY CASCADE"))
-            db.execute(text("TRUNCATE TABLE predictions RESTART IDENTITY CASCADE"))
-
-            for team in backup_data["teams"]:
-                db.execute(
-                    text("""
-                        INSERT INTO team (id, full_name, abbreviation, nickname, city, state, year_founded)
-                        VALUES (:id, :full_name, :abbreviation, :nickname, :city, :state, :year_founded)
-                        ON CONFLICT (id) DO NOTHING
-                    """),
-                    team
-                )
-
-            for user in backup_data["users"]:
-                db.execute(
-                    text("""
-                        INSERT INTO users (id, email, name, username, role, is_blocked, created_at)
-                        VALUES (:id, :email, :name, :username, :role, :is_blocked, :created_at)
-                        ON CONFLICT (id) DO NOTHING
-                    """),
-                    user
-                )
-
-            for match in backup_data["matches"]:
-                db.execute(
-                    text("""
-                        INSERT INTO game (game_id, game_date, team_id_home, team_abbreviation_home, team_name_home, 
-                                          team_id_away, team_abbreviation_away, team_name_away, pts_home, pts_away, wl_home, wl_away)
-                        VALUES (:game_id, :game_date, :team_id_home, :team_abbreviation_home, :team_name_home,
-                                :team_id_away, :team_abbreviation_away, :team_name_away, :pts_home, :pts_away, :wl_home, :wl_away)
-                        ON CONFLICT (game_id) DO NOTHING
-                    """),
-                    match
-                )
-
-            db.commit()
-
-        audit = AuditService(db)
-        audit.log(
-            user_id=(await require_admin(request)).user_id,
-            action="RESTORE_BACKUP",
-            entity="Backup",
-            entity_id=backup_id,
-            details={"filename": result[0]},
-            ip_address=request.client.host if request.client else None
-        )
-
-        return {"message": "Бэкап успешно восстановлен"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        print(f"Error restoring backup: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error restoring backup: {str(e)}"
-        )
+def escape_csv_cell(value):
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value

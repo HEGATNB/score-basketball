@@ -36,6 +36,7 @@ export interface LiveScoreboard {
   upcoming: LiveEvent[];
   finished: LiveEvent[];
   fetchedAt: number | null;
+  stale?: boolean;
   season?: number;
   week?: number;
   error?: string;
@@ -53,8 +54,6 @@ export interface LiveVideo {
 }
 
 export interface LiveHighlight extends LiveVideo {
-  /** YouTube video id resolved by backend — play in-app via iframe */
-  youtubeId?: string | null;
   youtubeQuery?: string;
   matchup: {
     eventId: string;
@@ -66,6 +65,7 @@ export interface LiveHighlight extends LiveVideo {
 
 export interface LiveMatchDetails {
   id: string;
+  stale?: boolean;
   date: string | null;
   venue: string | null;
   broadcast: string | null;
@@ -93,6 +93,21 @@ export interface LiveNewsItem {
   url: string | null;
   byline?: string | null;
   type?: string | null;
+  teams?: string[];
+}
+
+export interface NewsFeed {
+  items: LiveNewsItem[];
+  fetchedAt: number;
+  stale: boolean;
+}
+
+export interface RosterPlayer {
+  id: string;
+  name: string;
+  number: string | null;
+  position: string | null;
+  photo: string | null;
 }
 
 export interface LiveArticle {
@@ -123,6 +138,11 @@ export const liveApi = {
   matchDetails: (espnId: string) =>
     apiRequest<LiveMatchDetails>(`/live/match/${espnId}`, undefined, false),
   news: (limit = 16) => apiRequest<LiveNewsItem[]>(`/live/news?limit=${limit}`, undefined, false),
+  newsFeed: (limit = 40, team?: string) => apiRequest<NewsFeed>(
+    '/live/news-feed?' + new URLSearchParams({ limit: String(limit), ...(team ? { team } : {}) }),
+    undefined, false,
+  ),
+  roster: (team: string) => apiRequest<RosterPlayer[]>('/live/roster/' + encodeURIComponent(team)),
   article: (id: string) => apiRequest<LiveArticle>(`/live/news/${id}`, undefined, false),
   highlights: (limit = 12) =>
     apiRequest<LiveHighlight[]>(`/live/highlights?limit=${limit}`, undefined, false),

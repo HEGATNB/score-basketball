@@ -1,26 +1,29 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import numpy as np
-import pandas as pd
-import pickle
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+import logging
+import math
 import sys
 from typing import List, Dict, Any, Optional
-import asyncio
-import json
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from repositories.prediction_repository import PredictionRepository
 from repositories.game_repository import GameRepository
 from repositories.team_repository import TeamRepository
+from config import config
+from services import model_artifacts
+from services.forecast_context import ForecastDataUnavailable, availability_scenario
+from services.nba_catalog import BY_ABBREV, BY_NBA_ID, normalize_abbrev
+from services.nba_feed import current_standings
 
-MODEL_DIR = "./models"
+logger = logging.getLogger(__name__)
 
 
 class AIService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, read_only: bool = False):
         self.db = db
         self.prediction_repo = PredictionRepository(db)
         self.game_repo = GameRepository(db)
@@ -36,14 +39,10 @@ class AIService:
             "paceAdvantage": 0.05
         }
 
-        # Загружаем модель если есть
-        self.model = None
-        self.scaler = None
-        self.team_emas = {}
-        self.load_model()
-
-        # Создаем таблицу для предсказаний если нет
-        self._create_predictions_table()
+        self.artifacts = model_artifacts.artifacts
+        self.team_emas = self.artifacts.team_emas if self.artifacts else {}
+        if not read_only:
+            self._create_predictions_table()
 
     def _create_predictions_table(self):
         try:
@@ -69,206 +68,132 @@ class AIService:
             print(f"Ошибка при создании таблицы predictions: {e}")
             self.db.rollback()
 
-    def load_model(self):
-        # Загрузка обученной модели
-        model_path = os.path.join(MODEL_DIR, "model.h5")
-        scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
-        emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
+    def compute_preview(self, team1_id: int, team2_id: int, *, include_context: bool = False) -> Dict[str, Any]:
+        home = self._get_team_info(team1_id)
+        away = self._get_team_info(team2_id)
+        if not home or not away:
+            raise ValueError("One of the teams was not found")
 
-        if os.path.exists(model_path):
-            try:
-                from tensorflow.keras.models import load_model
-                self.model = load_model(model_path)
-                with open(scaler_path, "rb") as f:
-                    self.scaler = pickle.load(f)
-                with open(emas_path, "rb") as f:
-                    self.team_emas = pickle.load(f)
-                print("AI Service: модель загружена")
-            except Exception as e:
-                print(f"AI Service: ошибка загрузки модели: {e}")
+        stats1, stats2 = None, None
+        try:
+            stats1 = self.get_team_stats_by_season(team1_id)
+            stats2 = self.get_team_stats_by_season(team2_id)
+        except Exception:
+            logger.info("Archive stats unavailable for prediction")
 
-    async def predict_match(self, team1_id: int, team2_id: int, user_id: int) -> Dict[str, Any]:
-        print(f"AI предсказание: Команда {team1_id} vs Команда {team2_id}")
+        features = {}
+        baseline = self._neural_probability(team1_id, team2_id, features)
+        if baseline is not None:
+            model_version = "model-v1"
+            confidence = min(95, 70 + abs(baseline - 50))
+        else:
+            baseline = self._archive_probability(team1_id, team2_id, stats1, stats2)
+            if baseline is not None:
+                model_version = "statistical-v1"
+            else:
+                source = current_standings()
+                records = []
+                for team in (home, away):
+                    identity = BY_ABBREV.get(normalize_abbrev(team.get("abbrev") or ""))
+                    records.append(source.get(str(identity[1])) if identity else None)
+                if not all(record and record["wins"] + record["losses"] > 0 for record in records):
+                    raise ForecastDataUnavailable("No recent results are available for these teams")
+                home_record, away_record = records
+                rates = [(team["wins"] + 2) / (team["wins"] + team["losses"] + 4) for team in records]
+                home_odds = (rates[0] / (1 - rates[0])) / (rates[1] / (1 - rates[1]))
+                home_odds *= 1.15
+                baseline = 100 * home_odds / (1 + home_odds)
+                model_version = "espn-records-v1"
+                stats1 = {"pts_pg": home_record["points_per_game"], "opp_pts_pg": home_record["points_against"]}
+                stats2 = {"pts_pg": away_record["points_per_game"], "opp_pts_pg": away_record["points_against"]}
+            confidence = 70 + min(20, abs(baseline - 50) / 2)
 
-        # Получаем данные о командах
-        team1 = await self._get_team_info(team1_id)
-        team2 = await self._get_team_info(team2_id)
-
-        if not team1 or not team2:
-            raise ValueError("Одна из команд не найдена в базе данных")
-
-        # Если есть загруженная модель, используем её
-        if self.model is not None and self.scaler is not None and self.team_emas:
-            try:
-                return await self._predict_with_model(team1_id, team2_id, user_id, team1, team2)
-            except Exception as e:
-                print(f"Ошибка при использовании модели: {e}")
-
-        # Иначе используем статистический метод
-        return await self._predict_statistical(team1_id, team2_id, user_id, team1, team2)
-
-    async def _predict_with_model(self, team1_id: int, team2_id: int, user_id: int, team1: Dict, team2: Dict) -> Dict[
-        str, Any]:
-        # Предсказание с использованием обученной модели
-        home_id = str(team1_id)
-        away_id = str(team2_id)
-
-        if home_id not in self.team_emas or away_id not in self.team_emas:
-            return await self._predict_statistical(team1_id, team2_id, user_id, team1, team2)
-
-        home_ema = self.team_emas[home_id]
-        away_ema = self.team_emas[away_id]
-
-        STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
-        feat = []
-        features_dict = {}
-
-        for stat in STATS:
-            val = home_ema.get(stat, 110)
-            feat.append(val)
-            features_dict[f"home_{stat}"] = val
-
-        for stat in STATS:
-            val = away_ema.get(stat, 110)
-            feat.append(val)
-            features_dict[f"away_{stat}"] = val
-
-        feat_array = np.array(feat).reshape(1, -1)
-        feat_scaled = self.scaler.transform(feat_array)
-        prob = self.model.predict(feat_scaled)[0][0]
-
-        prob1 = float(prob) * 100
-        prob2 = 100 - prob1
-
-        # Рассчитываем уверенность на основе разницы вероятностей
-        confidence = min(95, 70 + abs(prob1 - 50))
-
-        # Предсказание счета на основе средних показателей
-        avg_score = 110
-        score1 = int(avg_score * prob1 / 100)
-        score2 = int(avg_score * prob2 / 100)
-
-        # Сохраняем предсказание
-        prediction_id = self.prediction_repo.create(
-            user_id=user_id,
-            team1_id=team1_id,
-            team2_id=team2_id,
-            prob1=prob1,
-            prob2=prob2,
-            score1=score1,
-            score2=score2,
-            confidence=confidence,
-            model_version="model-v1",
-            features=features_dict
-        )
+        probability = round(max(0, min(100, baseline)), 1)
+        context = None
+        if include_context:
+            context = availability_scenario(probability, home.get("abbrev") or "", away.get("abbrev") or "")
+            probability = context["adjustedTeam1"]
+            features["context"] = context
 
         return {
-            "id": str(prediction_id),
-            "probabilityTeam1": round(prob1, 1),
-            "probabilityTeam2": round(prob2, 1),
-            "expectedScoreTeam1": score1,
-            "expectedScoreTeam2": score2,
-            "confidence": round(confidence, 1),
             "team1Id": team1_id,
             "team2Id": team2_id,
-            "team1": team1,
-            "team2": team2,
-            "createdAt": datetime.now().isoformat(),
-            "modelVersion": "model-v1"
+            "team1": home,
+            "team2": away,
+            "probabilityTeam1": probability,
+            "probabilityTeam2": round(100 - probability, 1),
+            "expectedScoreTeam1": self._expected_points(stats1, stats2),
+            "expectedScoreTeam2": self._expected_points(stats2, stats1),
+            "confidence": round(confidence, 1),
+            "modelVersion": model_version,
+            "context": context,
+            "features": features,
         }
 
-    async def _predict_statistical(self, team1_id: str, team2_id: str, user_id: int, team1: Dict, team2: Dict) -> Dict[
-        str, Any]:
-        #Статистический метод предсказания
+    @staticmethod
+    def _expected_points(team: dict | None, opponent: dict | None) -> int | None:
+        offense = (team or {}).get("pts_pg")
+        defense = (opponent or {}).get("opp_pts_pg")
+        values = [float(value) for value in (offense, defense) if value and 0 < float(value) < math.inf]
+        return round(sum(values) / len(values)) if values else None
+
+    def _neural_probability(self, team1_id: int, team2_id: int, features: dict) -> float | None:
+        home = self.team_emas.get(str(team1_id))
+        away = self.team_emas.get(str(team2_id))
+        if not self.artifacts or not home or not away:
+            return None
         try:
-            # Получаем статистику команд
-            team1_stats = self.get_team_stats_by_season(team1_id)
-            team2_stats = self.get_team_stats_by_season(team2_id)
-
-            # Получаем историю матчей
-            team1_history = self._get_team_history(team1_id, 20)
-            team2_history = self._get_team_history(team2_id, 20)
-            head_to_head = self._get_head_to_head(team1_id, team2_id, 10)
-
-            # Рассчитываем факторы
-            team1_win_rate = self._calculate_win_rate(team1_id, team1_history)
-            team2_win_rate = self._calculate_win_rate(team2_id, team2_history)
-
-            # Фактор преимущества дома
-            home_advantage = 0.55
-
-            # Фактор личных встреч
-            head_to_head_factor = self._calculate_head_to_head_factor(head_to_head, team1_id) if head_to_head else 0.5
-
-            # Фактор формы
-            team1_form = self._calculate_recent_form(team1_id, team1_history[:5])
-            team2_form = self._calculate_recent_form(team2_id, team2_history[:5])
-            form_factor = team1_form / (team1_form + team2_form) if (team1_form + team2_form) > 0 else 0.5
-
-            # Фактор силы
-            if team1_stats and team2_stats:
-                offensive_factor = team1_stats.get('pts_pg', 110) / (
-                        team1_stats.get('pts_pg', 110) + team2_stats.get('opp_pts_pg', 110))
-                defensive_factor = team2_stats.get('opp_pts_pg', 110) / (
-                        team1_stats.get('opp_pts_pg', 110) + team2_stats.get('opp_pts_pg', 110))
-                strength_factor = (offensive_factor + defensive_factor) / 2
-            else:
-                strength_factor = 0.5
-
-            # Общая вероятность
-            prob1 = (
-                            team1_win_rate * 0.3 +
-                            home_advantage * 0.2 +
-                            head_to_head_factor * 0.15 +
-                            form_factor * 0.2 +
-                            strength_factor * 0.15
-                    ) * 100
-
-            prob2 = 100 - prob1
-            confidence = 70 + min(20, abs(prob1 - 50) / 2)
-
-            # Предсказание счета
-            if team1_stats and team2_stats:
-                score1 = int(team1_stats.get('pts_pg', 110) * (prob1 / 100))
-                score2 = int(team2_stats.get('pts_pg', 110) * (prob2 / 100))
-            else:
-                score1 = int(110 * prob1 / 100)
-                score2 = int(110 * prob2 / 100)
-
-            # Сохраняем предсказание
-            prediction_id = self.prediction_repo.create(
-                user_id=user_id,
-                team1_id=int(team1_id),
-                team2_id=int(team2_id),
-                prob1=prob1,
-                prob2=prob2,
-                score1=score1,
-                score2=score2,
-                confidence=confidence,
-                model_version="statistical-v1",
-                features=None
+            home_values = [float(home[stat]) for stat in config.STATS]
+            away_values = [float(away[stat]) for stat in config.STATS]
+            inputs = self.artifacts.scale(
+                np.array([home_values], dtype=np.float32), np.array([away_values], dtype=np.float32),
             )
+            probability = 100 * float(self.artifacts.model.predict(inputs, verbose=0)[0][0])
+            if not math.isfinite(probability):
+                return None
+            features.update({f"home_{stat}": value for stat, value in zip(config.STATS, home_values)})
+            features.update({f"away_{stat}": value for stat, value in zip(config.STATS, away_values)})
+            return probability
+        except Exception:
+            logger.exception("Neural prediction failed")
+            return None
 
-            return {
-                "id": str(prediction_id),
-                "probabilityTeam1": round(prob1, 1),
-                "probabilityTeam2": round(prob2, 1),
-                "expectedScoreTeam1": score1,
-                "expectedScoreTeam2": score2,
-                "confidence": round(confidence, 1),
-                "team1Id": int(team1_id),
-                "team2Id": int(team2_id),
-                "team1": team1,
-                "team2": team2,
-                "createdAt": datetime.now().isoformat(),
-                "modelVersion": "statistical-v1"
-            }
+    def _archive_probability(self, team1_id: int, team2_id: int,
+                             stats1: dict | None, stats2: dict | None) -> float | None:
+        try:
+            history1 = self._get_team_history(team1_id, 20)
+            history2 = self._get_team_history(team2_id, 20)
+            if not history1 or not history2:
+                return None
+            head_to_head = self._get_head_to_head(team1_id, team2_id, 10)
+            home_win_rate = self._calculate_win_rate(team1_id, history1)
+            home_form = self._calculate_recent_form(team1_id, history1[:5])
+            away_form = self._calculate_recent_form(team2_id, history2[:5])
+            form = home_form / (home_form + away_form) if home_form + away_form > 0 else 0.5
+            h2h = self._calculate_head_to_head_factor(head_to_head, team1_id) if head_to_head else 0.5
 
-        except Exception as e:
-            print(f"Ошибка в статистическом предсказании: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+            strength = 0.5
+            if stats1 and stats2:
+                off_home = float(stats1.get("pts_pg") or 110)
+                def_away = float(stats2.get("opp_pts_pg") or 110)
+                def_home = float(stats1.get("opp_pts_pg") or 110)
+                strength = (off_home / (off_home + def_away) + def_away / (def_home + def_away)) / 2
+
+            return 100 * (home_win_rate * 0.3 + 0.55 * 0.2 + h2h * 0.15 + form * 0.2 + strength * 0.15)
+        except Exception:
+            logger.info("Archive history unavailable for prediction")
+            return None
+
+    def predict_match(self, team1_id: int, team2_id: int, user_id: int,
+                      *, include_context: bool = False) -> Dict[str, Any]:
+        value = self.compute_preview(team1_id, team2_id, include_context=include_context)
+        prediction_id = self.prediction_repo.create(
+            user_id=user_id, team1_id=team1_id, team2_id=team2_id,
+            prob1=value["probabilityTeam1"], prob2=value["probabilityTeam2"],
+            score1=value["expectedScoreTeam1"], score2=value["expectedScoreTeam2"],
+            confidence=value["confidence"], model_version=value["modelVersion"], features=value["features"],
+        )
+        return {**value, "id": str(prediction_id), "createdAt": datetime.now(timezone.utc).isoformat()}
 
     def get_team_stats_by_season(self, team_id: str, season_id: str = None):
         return self.game_repo.get_team_stats(team_id, limit=30 if not season_id else 1000)
@@ -280,31 +205,33 @@ class AIService:
         return self.game_repo.get_head_to_head(team1_id, team2_id, limit=limit)
 
     def _calculate_win_rate(self, team_id: int, history: List[Dict]) -> float:
+        team_id = str(team_id)
         if not history:
             return 0.5
 
         wins = 0
         for match in history:
-            if match["team_id_home"] == team_id:
+            if str(match["team_id_home"]) == team_id:
                 if match.get("wl_home") == "W":
                     wins += 1
-            elif match["team_id_away"] == team_id:
+            elif str(match["team_id_away"]) == team_id:
                 if match.get("wl_away") == "W":
                     wins += 1
 
         return wins / len(history)
 
     def _calculate_recent_form(self, team_id: str, recent_matches: List[Dict]) -> float:
+        team_id = str(team_id)
         if not recent_matches:
             return 0.5
 
         total_score = 0
         for i, match in enumerate(recent_matches):
             weight = 1.0 - (i * 0.1)
-            if match.get("team_id_home") == team_id:
+            if str(match.get("team_id_home")) == team_id:
                 if match.get("wl_home") == "W":
                     total_score += 1.0 * weight
-            elif match.get("team_id_away") == team_id:
+            elif str(match.get("team_id_away")) == team_id:
                 if match.get("wl_away") == "W":
                     total_score += 1.0 * weight
 
@@ -312,69 +239,34 @@ class AIService:
         return total_score / max_possible if max_possible > 0 else 0.5
 
     def _calculate_head_to_head_factor(self, head_to_head: List[Dict], team1_id: str) -> float:
+        team1_id = str(team1_id)
         if not head_to_head:
             return 0.5
 
         team1_wins = 0
         for match in head_to_head:
-            if match.get("team_id_home") == team1_id:
+            if str(match.get("team_id_home")) == team1_id:
                 if match.get("wl_home") == "W":
                     team1_wins += 1
-            elif match.get("team_id_away") == team1_id:
+            elif str(match.get("team_id_away")) == team1_id:
                 if match.get("wl_away") == "W":
                     team1_wins += 1
 
         return team1_wins / len(head_to_head)
 
-    async def _save_prediction(self, user_id: int, team1_id: int, team2_id: int,
-                               prob1: float, prob2: float, score1: int, score2: int,
-                               confidence: float, model_version: str, features: Dict = None) -> int:
-        return self.prediction_repo.create(
-            user_id=user_id,
-            team1_id=team1_id,
-            team2_id=team2_id,
-            prob1=prob1,
-            prob2=prob2,
-            score1=score1,
-            score2=score2,
-            confidence=confidence,
-            model_version=model_version,
-            features=features
-        )
-
-    async def _get_team_info(self, team_id) -> Optional[Dict]:
+    def _get_team_info(self, team_id: int) -> Optional[Dict]:
         try:
-            team_id_str = str(team_id)
-            print(f"Поиск команды с ID: '{team_id_str}'")
-
             result = self.db.execute(
-                text("""
-                    SELECT 
-                        id,
-                        full_name as name,
-                        abbreviation as abbrev
-                    FROM team 
-                    WHERE id = :team_id
-                """),
-                {"team_id": team_id_str}
-            ).fetchone()
-
+                text("SELECT id, full_name AS name, abbreviation AS abbrev FROM team WHERE id = :team_id"),
+                {"team_id": str(team_id)},
+            ).mappings().first()
             if result:
-                print(f"Найдена: {result.name}")
-                return {
-                    "id": result.id,
-                    "name": result.name,
-                    "abbrev": result.abbrev
-                }
-            else:
-                print(f"Команда с ID '{team_id_str}' не найдена")
-                return None
+                return dict(result)
+        except Exception:
+            self.db.rollback()
 
-        except Exception as e:
-            print(f"Ошибка получения информации о команде {team_id}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        identity = BY_NBA_ID.get(team_id)
+        return {"id": team_id, "name": identity[3], "abbrev": identity[2]} if identity else None
 
     async def get_user_predictions(self, user_id: int, skip: int = 0, limit: int = 50):
         predictions_data = self.prediction_repo.get_by_user(user_id, skip=skip, limit=limit)
@@ -387,8 +279,8 @@ class AIService:
                 "id": str(pred["id"]),
                 "probabilityTeam1": float(pred["probability_team1"]),
                 "probabilityTeam2": float(pred["probability_team2"]),
-                "expectedScoreTeam1": int(pred["expected_score_team1"]),
-                "expectedScoreTeam2": int(pred["expected_score_team2"]),
+                "expectedScoreTeam1": pred.get("expected_score_team1"),
+                "expectedScoreTeam2": pred.get("expected_score_team2"),
                 "confidence": float(pred["confidence"]),
                 "createdAt": pred["created_at"].isoformat() if pred["created_at"] else None,
                 "team1Id": int(pred["team1_id"]) if pred["team1_id"] else None,
@@ -432,8 +324,8 @@ class AIService:
                 "user_id": pred.get("user_id"),
                 "probabilityTeam1": round(prob1, 1),
                 "probabilityTeam2": round(prob2, 1),
-                "expectedScoreTeam1": int(pred.get("expected_score_team1", 0)),
-                "expectedScoreTeam2": int(pred.get("expected_score_team2", 0)),
+                "expectedScoreTeam1": pred.get("expected_score_team1"),
+                "expectedScoreTeam2": pred.get("expected_score_team2"),
                 "confidence": round(confidence, 1),
                 "createdAt": pred["created_at"].isoformat() if pred.get("created_at") else None,
                 "team1Id": int(pred["team1_id"]) if pred.get("team1_id") else None,
@@ -448,7 +340,8 @@ class AIService:
                     "name": pred.get("team2_name") or f"Team {pred.get('team2_id')}",
                     "abbrev": pred.get("team2_abbrev") or f"T{pred.get('team2_id')}"
                 },
-                "modelVersion": model_version
+                "modelVersion": model_version,
+                "context": (pred.get("features") or {}).get("context")
             }
 
             print(f"Отправка ответа для ID {prediction_id}")
@@ -462,29 +355,10 @@ class AIService:
 
     async def evaluate_model(self) -> Optional[float]:
         try:
-            result = self.db.execute(
-                text("""
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE 
-                            WHEN (p.probability_team1 > 50 AND g.wl_home = 'W') OR
-                                 (p.probability_team1 < 50 AND g.wl_away = 'W')
-                            THEN 1 ELSE 0 
-                        END) as correct
-                    FROM predictions p
-                    JOIN game g ON (CAST(p.team1_id AS TEXT) = g.team_id_home 
-                                AND CAST(p.team2_id AS TEXT) = g.team_id_away)
-                    WHERE g.wl_home IS NOT NULL
-                """)
-            ).fetchone()
-
-            if result and result[0] > 0:
-                accuracy = result[1] / result[0]
-                return accuracy
-        except Exception as e:
-            print(f"Ошибка оценки модели: {e}")
-
-        return None
+            return self.prediction_repo.evaluate_accuracy()
+        except Exception:
+            logger.info("Prediction accuracy unavailable")
+            return None
 
     async def get_model_stats(self) -> Dict[str, Any]:
         """Статистика модели из реальных данных"""
@@ -503,7 +377,7 @@ class AIService:
                 "totalPredictions": total_pred,
                 "totalUsers": total_users,
                 "totalTrainingGames": total_games,
-                "accuracy": round(accuracy * 100, 1) if accuracy else None,
+                "accuracy": round(accuracy * 100, 1) if accuracy is not None else None,
                 "modelVersion": "v1.0",
                 "lastUpdated": datetime.now().isoformat()
             }

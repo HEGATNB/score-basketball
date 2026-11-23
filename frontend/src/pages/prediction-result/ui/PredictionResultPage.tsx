@@ -1,3 +1,4 @@
+import { PredictionContextSummary } from '@/shared/ui/PredictionContextSummary';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Award, Cpu, Sparkles, Trophy, Zap } from 'lucide-react';
@@ -210,7 +211,7 @@ export const PredictionResultPage = () => {
               </span>
             </div>
             <p className="mt-5 font-mono text-4xl tab-num">
-              {prediction.expectedScoreTeam1} – {prediction.expectedScoreTeam2}
+              {prediction.expectedScoreTeam1 ?? '—'} – {prediction.expectedScoreTeam2 ?? '—'}
             </p>
             <p className="mt-2 text-sm text-[var(--text-3)]">Среднее по сэмплам модели</p>
           </div>
@@ -238,6 +239,13 @@ export const PredictionResultPage = () => {
             </p>
           </div>
         </div>
+
+        {prediction.context && (
+          <section className="score-panel mt-8 space-y-4 p-5 sm:p-6">
+            <h2 className="m-0 font-display text-3xl">Оценка с учётом состава</h2>
+            <PredictionContextSummary context={prediction.context} home={prediction.team1?.abbrev} away={prediction.team2?.abbrev} />
+          </section>
+        )}
 
         {prediction.factors && typeof prediction.factors === 'object' ? (
           <div className="mt-12">
@@ -285,7 +293,7 @@ export const PredictionResultPage = () => {
 interface TeamProbProps {
   team?: { id: number; name: string; abbrev?: string; brandColor?: string; accentColor?: string };
   probability: number;
-  expectedScore: number;
+  expectedScore: number | null;
   isWinner: boolean;
 }
 
@@ -335,7 +343,7 @@ function TeamProb({ team, probability, expectedScore, isWinner }: TeamProbProps)
         >
           Ожидаемо
         </p>
-        <p className="font-mono text-2xl tab-num">{expectedScore}</p>
+        <p className="font-mono text-2xl tab-num">{expectedScore ?? '—'}</p>
       </div>
     </div>
   );

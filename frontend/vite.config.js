@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react()],
   resolve: {
     alias: {
@@ -11,7 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: '0.0.0.0',
+    host: 'localhost',
     proxy: {
       '/api': {
         target: process.env.VITE_PROXY_TARGET || 'http://localhost:8000',
@@ -55,10 +56,6 @@ export default defineConfig({
             // Router
             if (id.includes('react-router')) {
               return 'router';
-            }
-            // Document export utilities — used in admin only
-            if (id.includes('docx')) {
-              return 'docx';
             }
             // Everything else from node_modules
             return 'vendor';

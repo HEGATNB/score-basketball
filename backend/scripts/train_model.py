@@ -13,39 +13,10 @@ import sys
 import time
 import json
 from pathlib import Path
-from dotenv import load_dotenv
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from config import config
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-env_path = BASE_DIR / 'env'
-
-print(f"Поиск env файла по пути: {env_path}")
-
-if env_path.exists():
-    load_dotenv(env_path)
-    print("env файл загружен")
-else:
-    print("env файл не найден!")
-
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-
-# Директория для сохранения моделей
-
-MODEL_DIR = BASE_DIR / "models"
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-# Проверка наличия всех необходимых параметров
-
-if not all([DB_NAME, DB_USER, DB_PASSWORD]):
-    print("\nОШИБКА: Не все параметры БД заданы!")
-    sys.exit(1)
-
-# Альтернативный путь для моделей из env
-
-MODEL_DIR = os.getenv("MODEL_DIR", str(BASE_DIR / "models"))
+MODEL_DIR = config.MODEL_DIR
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 # Список статистических показателей для анализа
@@ -62,38 +33,8 @@ WEIGHT_DECAY_DAYS = 500  # Период полураспада весов (в д
 
 
 def get_db_connection():
-    print(f"\nПопытка подключения к БД...")
-    try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT,
-            cursor_factory=RealDictCursor
-        )
-        print("Подключение успешно!")
-        return conn
-    except Exception as e:
-        print(f"Ошибка подключения: {e}")
-        raise
+    return psycopg2.connect(config.DATABASE_URL, cursor_factory=RealDictCursor, connect_timeout=5)
 
-    '''   
-     Сохраняет метрики модели в базу данных
-
-    Параметры:
-    - model_version: версия модели (например, "1.0.0")
-    - training_games_count: количество игр в обучающей выборке
-    - accuracy: точность на обучающей выборке
-    - loss: функция потерь на обучающей выборке
-    - validation_accuracy: точность на валидационной выборке
-    - validation_loss: функция потерь на валидационной выборке
-    - features_count: количество признаков
-    - training_duration_seconds: длительность обучения в секундах
-    - status: статус ('completed', 'failed', 'in_progress')
-    - error_message: сообщение об ошибке (если есть)
-    - metadata: дополнительные метаданные в формате JSON
-    '''
 
 
 def save_model_metrics_to_db(
@@ -110,13 +51,7 @@ def save_model_metrics_to_db(
         metadata: dict = None
 ):
     try:
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT
-        )
+        conn = psycopg2.connect(config.DATABASE_URL, connect_timeout=5)
         cursor = conn.cursor()
 
         # Создаем таблицу, если её нет

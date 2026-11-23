@@ -116,6 +116,8 @@ class TeamUpdate(BaseModel):
 
 class TeamResponse(TeamBase):
     id: int
+    source: str = "database"
+    has_stats: bool = True
     conference_id: Optional[int] = None
     division_id: Optional[int] = None
     conference: Optional[str] = None
@@ -162,6 +164,8 @@ class MatchResultUpdate(BaseModel):
 
 class MatchResponse(MatchBase):
     id: int
+    game_id: Optional[str] = None
+    source: str = "database"
     home_score: Optional[int] = None
     away_score: Optional[int] = None
     home_team: TeamInfo
@@ -177,6 +181,7 @@ class MatchResponse(MatchBase):
 class PredictionRequest(BaseModel):
     team1_id: int = Field(..., alias="team1Id")
     team2_id: int = Field(..., alias="team2Id")
+    include_context: bool = Field(False, alias="includeContext")
 
     class Config:
         populate_by_name = True
@@ -186,8 +191,8 @@ class PredictionResponse(BaseModel):
     id: str
     probabilityTeam1: float
     probabilityTeam2: float
-    expectedScoreTeam1: int
-    expectedScoreTeam2: int
+    expectedScoreTeam1: Optional[int]
+    expectedScoreTeam2: Optional[int]
     confidence: float
     team1Id: int
     team2Id: int
@@ -195,6 +200,7 @@ class PredictionResponse(BaseModel):
     team2: TeamInfo
     createdAt: str
     modelVersion: str
+    context: Optional[dict] = None
 
 
 class ModelEvaluationResponse(BaseModel):

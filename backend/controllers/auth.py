@@ -1,19 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
+from hashlib import sha256
+import logging
+from math import ceil
+from time import time
+from starlette.concurrency import run_in_threadpool
 from typing import Optional
-from jose import jwt
 
 from database import get_db
 import schemas
 from services.auth_service import AuthService
 from services.audit_service import AuditService
 from services.redis_service import redis_service
-from scripts.auth import generate_token, TokenPayload, verify_token
-from middleware.auth import extract_token_from_request, get_token_issued_at
-from config import config
+from scripts.auth import generate_token, TokenPayload, verify_password
+from middleware.auth import enforce_rate_limit, get_current_user
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
@@ -23,29 +27,21 @@ async def login(
 ):
     try:
         body = await request.json()
-        print(f"Получен запрос на логин: {body}")
 
         identifier = body.get("identifier") or body.get("email")
         password = body.get("password")
 
-        if not identifier or not password:
+        if not isinstance(identifier, str) or not identifier or not isinstance(password, str) or not password:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Необходимо указать email/identifier и пароль"
+                detail="Email/identifier and password are required"
             )
-        # Ограничение запросов
-
+        account_key = sha256(identifier.casefold().encode("utf-8")).hexdigest()
         client_ip = request.client.host if request.client else "unknown"
-        rate_key = f"login:{client_ip}:{identifier}"
-        is_allowed, remaining, reset_time = redis_service.check_rate_limit(rate_key, limit=5, period=300)
-
-        if not is_allowed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Слишком много попыток входа. Попробуйте через {reset_time} секунд"
-            )
-
-        print(f"Попытка входа с identifier: {identifier}")
+        await enforce_rate_limit(request, "login-ip", limit=30, period=300)
+        await enforce_rate_limit(
+            request, "login-account", limit=5, period=300, identity=f"{client_ip}:{account_key}",
+        )
 
         service = AuthService(db)
         user = None
@@ -64,40 +60,52 @@ async def login(
 
             if result:
                 user_data = dict(result._mapping)
-                from scripts.auth import verify_password
                 if verify_password(password, user_data["password_hash"]):
                     user = {
                         "id": user_data["id"],
                         "email": user_data["email"],
                         "name": user_data["name"] or user_data["username"],
+                        "username": user_data["username"],
                         "role": user_data["role"],
                         "is_blocked": user_data["is_blocked"],
                         "created_at": user_data["created_at"]
                     }
 
         if not user:
-            print(f"Неудачная попытка входа для {identifier}")
+            from sqlalchemy import text
+            blocked = db.execute(
+                text("""
+                    SELECT is_blocked FROM users
+                    WHERE email = :identifier OR username = :identifier OR name = :identifier
+                    LIMIT 1
+                """),
+                {"identifier": identifier}
+            ).fetchone()
+            if blocked and blocked._mapping.get("is_blocked"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is blocked"
+                )
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Неверный email/имя или пароль",
+                detail="Invalid email/username or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
         if user.get("is_blocked"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Пользователь заблокирован"
+                detail="User is blocked"
             )
-        redis_service.reset_rate_limit(rate_key)
+        await run_in_threadpool(redis_service.reset_rate_limit, f"login-account:{client_ip}:{account_key}")
         payload = TokenPayload(
             user_id=user["id"],
             email=user["email"],
             role=user["role"]
         )
         token = generate_token(payload)
-        redis_service.save_user_session(user["id"], token)
 
-        print(f"Токен создан для {user['email']}")
 
         try:
             audit = AuditService(db)
@@ -108,15 +116,16 @@ async def login(
                 entity_id=user["id"],
                 ip_address=request.client.host if request.client else None
             )
-        except Exception as e:
-            print(f"Ошибка логирования: {e}")
+        except Exception:
+            logger.warning("Could not write authentication audit record")
 
         user_response = schemas.UserResponse(
             id=user["id"],
             email=user["email"],
             name=user.get("name", user["email"]),
+            username=user.get("username"),
             role=user["role"],
-            created_at=user.get("created_at", datetime.utcnow())
+            created_at=user.get("created_at", datetime.now(timezone.utc))
         )
 
         return {
@@ -128,75 +137,47 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Ошибка в login: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Authentication request failed", extra={"error_type": type(e).__name__})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Внутренняя ошибка сервера"
+            detail="Internal server error"
         )
 
 
 @router.post("/logout")
 async def logout(request: Request, db: Session = Depends(get_db)):
-    from middleware.auth import get_current_user
+    user_data = await get_current_user(request)
+    if user_data:
+        remaining = max(1, ceil(user_data.expires_at - time()))
+        if not await run_in_threadpool(redis_service.blacklist_token, user_data.token_id, remaining):
+            raise HTTPException(status_code=503, detail="Could not revoke session")
+        try:
+            AuditService(db).log(
+                user_id=user_data.user_id,
+                action="LOGOUT",
+                entity="User",
+                entity_id=user_data.user_id,
+                ip_address=request.client.host if request.client else None,
+            )
+        except Exception:
+            logger.warning("Could not write authentication audit record")
 
-    try:
-        token = extract_token_from_request(request)
-        user_data = await get_current_user(request)
-
-        if token and redis_service.is_available():
-            # Получаем время жизни токена
-
-            try:
-                payload = jwt.decode(token, config.JWT_SECRET, algorithms=["HS256"], options={"verify_exp": False})
-                exp = payload.get("exp", 0)
-                iat = payload.get("iat", 0)
-                expires_in = max(exp - int(datetime.now().timestamp()), 0)
-                # Добавляем токен в черный список
-
-                if expires_in > 0:
-                    redis_service.blacklist_token(token, expires_in)
-                    print(f"Токен добавлен в черный список, истекает через {expires_in} сек")
-            except Exception as e:
-                print(f"Ошибка при получении expiration: {e}")
-                redis_service.blacklist_token(token, 604800)  # 7 дней
-
-        if user_data:
-            try:
-                audit = AuditService(db)
-                audit.log(
-                    user_id=user_data.user_id,
-                    action="LOGOUT",
-                    entity="User",
-                    entity_id=user_data.user_id,
-                    ip_address=request.client.host if request.client else None
-                )
-            except Exception as e:
-                print(f"Ошибка логирования выхода: {e}")
-            print(f"Выход пользователя {user_data.user_id}")
-
-        return {"message": "Выход выполнен успешно"}
-    except Exception as e:
-        print(f"Ошибка в logout: {e}")
-        return {"message": "Выход выполнен успешно"}
+    return {"message": "Signed out successfully"}
 
 
 @router.post("/logout-all")
 async def logout_all_devices(request: Request, db: Session = Depends(get_db)):
-    from middleware.auth import get_current_user
-
     user_data = await get_current_user(request)
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован"
+            detail="Not authenticated"
         )
 
     # Отзываем все токены пользователя
 
-    if redis_service.is_available():
-        redis_service.revoke_all_user_tokens(user_data.user_id)
+    if not await run_in_threadpool(redis_service.revoke_all_user_tokens, user_data.user_id):
+        raise HTTPException(status_code=503, detail="Could not revoke sessions")
     try:
         audit = AuditService(db)
         audit.log(
@@ -206,10 +187,10 @@ async def logout_all_devices(request: Request, db: Session = Depends(get_db)):
             entity_id=user_data.user_id,
             ip_address=request.client.host if request.client else None
         )
-    except Exception as e:
-        print(f"Ошибка логирования: {e}")
+    except Exception:
+        logger.warning("Could not write authentication audit record")
 
-    return {"message": "Вы вышли из всех устройств"}
+    return {"message": "You have been signed out on all devices"}
 
 
 @router.get("/me", response_model=schemas.UserResponse)
@@ -217,52 +198,165 @@ async def get_current_user_info(
         request: Request,
         db: Session = Depends(get_db)
 ):
-    from middleware.auth import get_current_user
-
     try:
-        print("Запрос информации о текущем пользователе")
         user_data = await get_current_user(request)
 
         if not user_data:
-            print("Пользователь не авторизован")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Не авторизован",
+                detail="Not authenticated",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        print(f"Токен валиден. User ID: {user_data.user_id}")
 
         service = AuthService(db)
         user = service.get_user_by_id(user_data.user_id)
 
         if not user:
-            print(f"Пользователь с ID {user_data.user_id} не найден в БД")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Пользователь не найден"
+                detail="User was not found"
             )
 
-        print(f"Информация о пользователе получена: {user['email']}")
 
         return schemas.UserResponse(
             id=user["id"],
             email=user["email"],
             name=user.get("name", user["email"]),
+            username=user.get("username"),
             role=user["role"],
-            created_at=user.get("created_at", datetime.utcnow())
+            created_at=user.get("created_at", datetime.now(timezone.utc))
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Ошибка в me: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Authentication request failed", extra={"error_type": type(e).__name__})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Внутренняя ошибка сервера"
+            detail="Internal server error"
         )
+
+
+@router.patch("/me", response_model=schemas.UserResponse)
+async def update_profile(
+        request: Request,
+        db: Session = Depends(get_db)
+):
+    """Обновляет профиль текущего пользователя (имя, имя пользователя, email)."""
+    user_data = await get_current_user(request)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    name = body.get("name")
+    username = body.get("username")
+    email = body.get("email")
+
+    service = AuthService(db)
+    try:
+        user = service.update_profile(
+            user_data.user_id,
+            name=name,
+            username=username,
+            email=email,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not update profile",
+        )
+
+    try:
+        audit = AuditService(db)
+        audit.log(
+            user_id=user_data.user_id,
+            action="UPDATE_PROFILE",
+            entity="User",
+            entity_id=user_data.user_id,
+            ip_address=request.client.host if request.client else None,
+        )
+    except Exception:
+        logger.warning("Could not write authentication audit record")
+
+    return schemas.UserResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user.get("name", user["email"]),
+        username=user.get("username"),
+        role=user["role"],
+        created_at=user.get("created_at", datetime.now(timezone.utc)),
+    )
+
+
+@router.post("/change-password")
+async def change_password(
+        request: Request,
+        db: Session = Depends(get_db)
+):
+    """Меняет пароль текущего пользователя; требуется указать его текущий пароль."""
+    user_data = await get_current_user(request)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    current_password = body.get("currentPassword") or body.get("current_password")
+    new_password = body.get("newPassword") or body.get("new_password")
+
+    if not current_password or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Current and new password are required",
+        )
+
+    service = AuthService(db)
+    try:
+        service.change_password(user_data.user_id, current_password, new_password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not change password",
+        )
+
+    try:
+        audit = AuditService(db)
+        audit.log(
+            user_id=user_data.user_id,
+            action="CHANGE_PASSWORD",
+            entity="User",
+            entity_id=user_data.user_id,
+            ip_address=request.client.host if request.client else None,
+        )
+    except Exception:
+        logger.warning("Could not write authentication audit record")
+
+    return {"message": "Password updated"}
 
 
 @router.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
@@ -272,18 +366,18 @@ async def register(
 ):
     try:
         body = await request.json()
-        print(f"Получен запрос на регистрацию: {body}")
 
         email = body.get("email")
         password = body.get("password")
-        name = body.get("name") or body.get("username") or email.split('@')[0]
-        username = body.get("username") or name
-
-        if not email or not password:
+        if not isinstance(email, str) or not email or not isinstance(password, str) or not password:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Email и пароль обязательны"
+                detail="Email and password are required"
             )
+
+        await enforce_rate_limit(request, "register", limit=10, period=300)
+        name = body.get("name") or body.get("username") or email.split("@")[0]
+        username = body.get("username") or name
 
         service = AuthService(db)
 
@@ -291,7 +385,7 @@ async def register(
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Пользователь с таким email уже существует"
+                detail="A user with this email already exists"
             )
 
         user = service.create_user({
@@ -311,47 +405,24 @@ async def register(
                 entity_id=user["id"],
                 ip_address=request.client.host if request.client else None
             )
-        except Exception as e:
-            print(f"Ошибка логирования: {e}")
+        except Exception:
+            logger.warning("Could not write authentication audit record")
 
-        print(f"Пользователь зарегистрирован: {user['email']}")
 
         return schemas.UserResponse(
             id=user["id"],
             email=user["email"],
             name=user.get("name", user["email"]),
+            username=user.get("username"),
             role=user["role"],
-            created_at=user.get("created_at", datetime.utcnow())
+            created_at=user.get("created_at", datetime.now(timezone.utc))
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Ошибка в register: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Authentication request failed", extra={"error_type": type(e).__name__})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Внутренняя ошибка сервера"
-        )
-
-
-@router.post("/init")
-async def init_database(db: Session = Depends(get_db)):
-    try:
-        print("Инициализация базы данных тестовыми пользователями")
-        service = AuthService(db)
-        result = service.init_database()
-        print(f"Инициализация завершена: {result}")
-        return {
-            "message": "База данных инициализирована",
-            "created_users": result.get("created_users", [])
-        }
-    except Exception as e:
-        print(f"Ошибка в init: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Внутренняя ошибка сервера"
+            detail="Internal server error"
         )

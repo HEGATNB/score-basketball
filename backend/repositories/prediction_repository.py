@@ -11,7 +11,7 @@ class PredictionRepository(BaseRepository):
         super().__init__(db)
 
     def create(self, user_id: int, team1_id: int, team2_id: int,
-               prob1: float, prob2: float, score1: int, score2: int,
+               prob1: float, prob2: float, score1: Optional[int], score2: Optional[int],
                confidence: float, model_version: str, features: Dict = None) -> int:
         features_json = json.dumps(features) if features else None
         query = """
@@ -49,6 +49,7 @@ class PredictionRepository(BaseRepository):
                 p.expected_score_team1,
                 p.expected_score_team2,
                 p.confidence,
+                p.features,
                 p.model_version,
                 p.created_at,
                 t1.full_name as team1_name,
@@ -99,9 +100,20 @@ class PredictionRepository(BaseRepository):
                     THEN 1 ELSE 0 
                 END) as correct
             FROM predictions p
-            JOIN game g ON (CAST(p.team1_id AS TEXT) = g.team_id_home 
-                        AND CAST(p.team2_id AS TEXT) = g.team_id_away)
-            WHERE g.wl_home IS NOT NULL
+            JOIN LATERAL (
+                SELECT wl_home, wl_away
+                FROM game
+                WHERE CAST(p.team1_id AS TEXT) = team_id_home
+                  AND CAST(p.team2_id AS TEXT) = team_id_away
+                  AND NULLIF(game_date, '')::timestamp >= p.created_at
+                  AND NULLIF(game_date, '')::timestamp <= p.created_at + INTERVAL '90 days'
+                  AND (p.features->'context'->>'eventId' IS NULL
+                       OR game_id = 'ESPN_' || (p.features->'context'->>'eventId'))
+                ORDER BY NULLIF(game_date, '')::timestamp, game_id
+                LIMIT 1
+            ) g ON true
+            WHERE g.wl_home IN ('W', 'L')
+              AND p.probability_team1 <> 50
         """
         result = self._fetch_one(query)
         if result and result.get("total", 0) > 0:

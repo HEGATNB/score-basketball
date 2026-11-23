@@ -2,16 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+import logging
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
 from database import get_db
 from services.ai_service import AIService
-from services.team_service import TeamService
+from services.forecast_context import ForecastDataUnavailable
 from services.audit_service import AuditService
 from services.user_stats_service import UserStatsService, evaluate_challenges
-from middleware.auth import get_current_user, require_admin
+from middleware.auth import enforce_rate_limit, get_current_user, require_admin
+from services.redis_service import redis_service
 import schemas
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/predict", response_model=schemas.PredictionResponse)
 async def predict(
@@ -19,89 +24,72 @@ async def predict(
         request: Request,
         db: Session = Depends(get_db)
 ):
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if prediction_data.team1_id == prediction_data.team2_id:
+        raise HTTPException(status_code=400, detail="Teams must be different")
+    await enforce_rate_limit(request, "predict-user", limit=30, period=60, identity=user.user_id)
+    return await run_in_threadpool(save_prediction, db, request, prediction_data, user.user_id)
+
+
+def save_prediction(db: Session, request: Request, data: schemas.PredictionRequest, user_id: int):
     try:
-        print(f" Получены данные: team1_id={prediction_data.team1_id}, team2_id={prediction_data.team2_id}")
-
-        # Проверка авторизации
-        user_data = await get_current_user(request)
-        if not user_data:
-            print("Пользователь не авторизован")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Не авторизован"
-            )
-        print(f" Пользователь авторизован: ID={user_data.user_id}, Role={user_data.role}")
-
-        ai_svc = AIService(db)
-        team_svc = TeamService(db)
-        audit_svc = AuditService(db)
-
-        # Проверка существования команд
-        print(f" Поиск команды 1: {prediction_data.team1_id}")
-        team1 = team_svc.get_team_by_id(prediction_data.team1_id)
-        print(f"   Результат: {team1}")
-
-        print(f" Поиск команды 2: {prediction_data.team2_id}")
-        team2 = team_svc.get_team_by_id(prediction_data.team2_id)
-        print(f"   Результат: {team2}")
-
-        if not team1 or not team2:
-            print(f"Команды не найдены: team1={team1 is not None}, team2={team2 is not None}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Одна из команд не найдена: {prediction_data.team1_id} или {prediction_data.team2_id}"
-            )
-
-        if prediction_data.team1_id == prediction_data.team2_id:
-            print("Команды одинаковые")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Команды должны быть разными"
-            )
-        try:
-            prediction = await ai_svc.predict_match(
-                prediction_data.team1_id,
-                prediction_data.team2_id,
-                user_data.user_id
-            )
-            print(f"Предсказание получено: ID={prediction['id']}")
-            print(f"Вероятности: {prediction['probabilityTeam1']}% / {prediction['probabilityTeam2']}%")
-        except Exception as e:
-            print(f"AI prediction error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Ошибка при создании прогноза: {str(e)}"
-            )
-        # Логирование
-        audit_svc.log(
-            user_id=user_data.user_id,
-            action="PREDICT",
-            entity="Prediction",
-            entity_id=int(prediction["id"]),
-            details={
-                "team1": team1.get("name") or team1.get("full_name"),
-                "team2": team2.get("name") or team2.get("full_name"),
-                "probability": prediction.get("probabilityTeam1"),
-                "confidence": prediction.get("confidence")
-            },
-            ip_address=request.client.host if request.client else None
+        prediction = AIService(db).predict_match(
+            data.team1_id, data.team2_id, user_id, include_context=data.include_context,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="One of the teams was not found") from exc
+    except ForecastDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Not enough data for a prediction") from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Prediction storage unavailable") from exc
 
-        print(" Предсказание успешно")
-        return prediction
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Необработанная ошибка в predict: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Внутренняя ошибка сервера: {str(e)}"
+    try:
+        AuditService(db).log(
+            user_id=user_id, action="PREDICT", entity="Prediction", entity_id=int(prediction["id"]),
+            details={"team1": prediction["team1"]["name"], "team2": prediction["team2"]["name"],
+                     "probability": prediction["probabilityTeam1"]},
+            ip_address=request.client.host if request.client else None,
         )
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Audit insert failed for prediction %s", prediction["id"])
+    return prediction
+
+
+@router.get("/predict/preview")
+async def predict_preview(
+        request: Request,
+        team1: int,
+        team2: int,
+        include_context: bool = False,
+        db: Session = Depends(get_db),
+):
+    """Public, read-only preview for the home and match cards."""
+    await enforce_rate_limit(request, "predict-preview", limit=90, period=60)
+    if team1 == team2:
+        raise HTTPException(status_code=400, detail="Teams must be different")
+
+    return await run_in_threadpool(get_cached_preview, db, team1, team2, include_context)
+
+
+def get_cached_preview(db: Session, team1: int, team2: int, include_context: bool = False):
+    key = f"predict-preview:v2:{team1}:{team2}:{int(include_context)}"
+    cached = redis_service.get(key)
+    if cached is not None:
+        return cached
+    try:
+        service = AIService(db, read_only=True)
+        value = service.compute_preview(team1, team2, include_context=True) if include_context else service.compute_preview(team1, team2)
+        value.pop("features", None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="One of the teams was not found") from exc
+    except ForecastDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Not enough data for a prediction") from exc
+    redis_service.set(key, value, expire=60)
+    return value
 
 
 @router.get("/predict/stats")
@@ -126,12 +114,12 @@ async def evaluate_model(
     if accuracy is None:
         return {
             "accuracy": None,
-            "message": "Недостаточно данных для оценки модели"
+            "message": "Not enough data to evaluate the model"
         }
 
     return {
         "accuracy": round(accuracy * 100, 1),
-        "message": f"Точность модели: {accuracy * 100:.1f}%"
+        "message": f"Model accuracy: {accuracy * 100:.1f}%"
     }
 
 
@@ -146,7 +134,7 @@ async def get_my_predictions(
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован"
+            detail="Not authenticated"
         )
 
     ai_svc = AIService(db)
@@ -170,7 +158,7 @@ async def get_prediction_by_id(
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован"
+            detail="Not authenticated"
         )
 
     ai_svc = AIService(db)
@@ -179,13 +167,13 @@ async def get_prediction_by_id(
     if not prediction:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Прогноз с ID {prediction_id} не найден"
+            detail=f"Prediction with ID {prediction_id} was not found"
         )
     # Проверка прав доступа
     if prediction.get("user_id") != user_data.user_id and user_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нет доступа к этому прогнозу"
+            detail="You do not have access to this prediction"
         )
 
     return prediction
@@ -209,13 +197,13 @@ async def train_on_match(
     if not match:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Матч с ID {match_id} не найден"
+            detail=f"Match with ID {match_id} was not found"
         )
 
     if match.get("status") != "finished" or match.get("home_score") is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Матч еще не завершен или не имеет результата"
+            detail="The match is not finished or has no result yet"
         )
 
     result = await ai_svc.train_on_actual_result(match)
@@ -230,23 +218,23 @@ async def train_on_match(
     )
 
     return {
-        "message": "Модель успешно обучена на реальном результате",
+        "message": "The model was trained on the actual result",
         "result": result
     }
 
 
 # ============================================================
-# User stats / cabinet / challenges / leaderboard
+# Статистика пользователя, профиль, достижения и таблица лидеров
 # ============================================================
 
 @router.get("/predictions/my/stats")
 async def get_my_stats(request: Request, db: Session = Depends(get_db)):
-    """Aggregated cabinet stats: accuracy, streaks, XP, last-20 spark, categories."""
+    """Сводная статистика профиля: точность, серии, опыт, последние 20 прогнозов и категории."""
     user_data = await get_current_user(request)
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован",
+            detail="Not authenticated",
         )
     try:
         svc = UserStatsService(db)
@@ -256,18 +244,18 @@ async def get_my_stats(request: Request, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Не удалось собрать статистику: {e}",
+            detail="Could not collect stats",
         )
 
 
 @router.get("/challenges/my")
 async def get_my_challenges(request: Request, db: Session = Depends(get_db)):
-    """Challenge progress derived from saved predictions."""
+    """Прогресс достижений, рассчитанный по сохранённым прогнозам."""
     user_data = await get_current_user(request)
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован",
+            detail="Not authenticated",
         )
     try:
         svc = UserStatsService(db)
@@ -278,7 +266,7 @@ async def get_my_challenges(request: Request, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Не удалось вычислить челленджи: {e}",
+            detail="Could not calculate challenges",
         )
 
 
@@ -288,7 +276,7 @@ async def get_leaderboard(
         limit: int = 20,
         db: Session = Depends(get_db),
 ):
-    """Top users ranked by XP (open — anyone can view)."""
+    """Рейтинг пользователей по опыту; доступен всем посетителям."""
     try:
         svc = UserStatsService(db)
         board = svc.get_leaderboard(limit=limit)
@@ -306,5 +294,5 @@ async def get_leaderboard(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Не удалось собрать рейтинг: {e}",
+            detail="Could not collect leaderboard",
         )

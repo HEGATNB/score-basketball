@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Dict
 
 from repositories.team_repository import TeamRepository
+from services.nba_catalog import BY_ABBREV, DIVISION_BY_ABBREV, normalize_abbrev
 
 
 class TeamService:
@@ -12,21 +13,28 @@ class TeamService:
         self.db = db
         self.team_repo = TeamRepository(db)
 
+    def _decorate_team(self, team: Dict) -> Dict:
+        abbrev = normalize_abbrev(team.get('abbrev') or '')
+        identity = BY_ABBREV.get(abbrev)
+        conference = team.get('conference') or team.get('stats_conference') or team.get('team_conference')
+        if conference in ("East", "Eastern Conference"):
+            conference = "Eastern"
+        elif conference in ("West", "Western Conference"):
+            conference = "Western"
+        conference = conference or (identity[5] if identity else None)
+
+        team['conference'] = conference
+        team['conference_id'] = 1 if conference == 'Eastern' else 2 if conference == 'Western' else 0
+        team['division'] = team.get('division') or DIVISION_BY_ABBREV.get(abbrev)
+        return team
+
     def get_all_teams(self, skip: int = 0, limit: int = 100):
         try:
             teams = self.team_repo.get_all(skip=skip, limit=limit)
 
             # Преобразование данных для совместимости с фронтендом
             for team in teams:
-                conference = team.get('stats_conference') or team.get('team_conference')
-                conference_id = 0
-                if conference == 'Eastern':
-                    conference_id = 1
-                elif conference == 'Western':
-                    conference_id = 2
-
-                team['conference_id'] = conference_id
-                team['conference'] = conference
+                self._decorate_team(team)
 
                 # Преобразуем None в 0 для числовых полей
                 team['points_per_game'] = float(team.get('points_per_game') or 0)
@@ -41,12 +49,12 @@ class TeamService:
 
         except Exception as e:
             print(f"Ошибка получения команд: {e}")
-            import traceback
-            traceback.print_exc()
+            self.db.rollback()
             return []
 
     def get_team_by_id(self, team_id: int) -> Optional[Dict]:
-        return self.team_repo.get_by_id(team_id)
+        team = self.team_repo.get_by_id(team_id)
+        return self._decorate_team(team) if team else None
 
     def get_team_by_name(self, name: str) -> Optional[Dict]:
         return self.team_repo.get_by_name(name)

@@ -1,57 +1,55 @@
-from controllers import admin
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+import logging
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 import numpy as np
-import pandas as pd
-import pickle
-import os
-import asyncio
-from tensorflow.keras.models import load_model
-from datetime import datetime
-from typing import Optional
-from pathlib import Path
-from controllers import auth, teams, matches, predictions, players, home, live
-from scripts.update_data import update_db_with_new_games
-from scripts.train_model import train_model
-from database import engine, Base, get_db
+from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+
+from config import config
+from controllers import admin, auth, home, live, matches, players, predictions, teams
+from database import get_db
+from middleware.auth import enforce_rate_limit, require_admin, require_admin_or_operator
 from scheduler import data_updater
+from scripts.auth import validate_jwt_config
+from services import model_artifacts
 from services.model_metrics_service import ModelMetricsService
-import atexit
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    validate_jwt_config()
+    await run_in_threadpool(model_artifacts.reload_artifacts)
+    await data_updater.start()
+    try:
+        yield
+    finally:
+        await data_updater.stop()
+
 
 app = FastAPI(
     title="HoopsAI API",
-    description="API для прогнозирования баскетбольных матчей",
-    version="1.0.0"
+    description="API for basketball match prediction",
+    version="1.0.0",
+    docs_url="/docs" if config.is_development else None,
+    redoc_url="/redoc" if config.is_development else None,
+    openapi_url="/openapi.json" if config.is_development else None,
+    lifespan=lifespan,
 )
-
-# CORS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
-
-# Переменные для нейросети
-
-model = None
-scaler = None              # legacy single-scaler artifact (older trainer)
-scaler_home = None         # current trainer: separate scaler for the home features
-scaler_away = None         # current trainer: separate scaler for the away features
-team_emas = {}
-teams_df = None
-STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
-MODEL_DIR = os.getenv("MODEL_DIR", "./models")
-
 
 
 class NeuralPredictionRequest(BaseModel):
@@ -65,297 +63,97 @@ class NeuralPredictionResponse(BaseModel):
     home_win_probability: float
 
 
-# Загрузка нейросети
-@app.on_event("startup")
-def load_artifacts():
-    global model, scaler, scaler_home, scaler_away, team_emas, teams_df
-    model_path = os.path.join(MODEL_DIR, "model.h5")
-    scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
-    scaler_home_path = os.path.join(MODEL_DIR, "scaler_home.pkl")
-    scaler_away_path = os.path.join(MODEL_DIR, "scaler_away.pkl")
-    emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
-    teams_path = os.path.join(MODEL_DIR, "teams.csv")
-
-    if not os.path.exists(model_path):
-        print("Neural network not found. Run train_model.py first.")
-        return
-
-    try:
-        model = load_model(model_path)
-
-        # Prefer the per-side scaler pair produced by the current trainer.
-        # Fall back to the legacy single scaler.pkl for older artifacts.
-        if os.path.exists(scaler_home_path) and os.path.exists(scaler_away_path):
-            with open(scaler_home_path, "rb") as f:
-                scaler_home = pickle.load(f)
-            with open(scaler_away_path, "rb") as f:
-                scaler_away = pickle.load(f)
-            print("Loaded split scalers (scaler_home + scaler_away)")
-        elif os.path.exists(scaler_path):
-            with open(scaler_path, "rb") as f:
-                scaler = pickle.load(f)
-            print("Loaded legacy single scaler.pkl")
-        else:
-            print("WARNING: No scaler artifact found alongside model.h5")
-            return
-
-        with open(emas_path, "rb") as f:
-            team_emas = pickle.load(f)
-
-        if os.path.exists(teams_path):
-            teams_df = pd.read_csv(teams_path)
-
-        print("Neural network loaded successfully")
-    except Exception as e:
-        print(f"Error loading neural network: {e}")
-
-
-@app.on_event("startup")
-async def start_scheduler():
-    try:
-        data_updater.start()
-        print("Scheduler started")
-    except Exception as e:
-        print(f"Error starting scheduler: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_scheduler():
-    try:
-        data_updater.stop()
-        print("Scheduler stopped")
-    except Exception as e:
-        print(f"Error stopping scheduler: {e}")
-
-
-# Эндпоинты для нейросети
-
 @app.get("/api/neural/teams")
 @app.get("/neural/teams")
 def get_neural_teams():
-    if teams_df is None:
+    snapshot = model_artifacts.artifacts
+    if snapshot is None or snapshot.teams is None:
         raise HTTPException(status_code=503, detail="Neural network not loaded")
-    return teams_df[['team_abbrev', 'team_name']].drop_duplicates().to_dict(orient='records')
+    return snapshot.teams[["team_abbrev", "team_name"]].drop_duplicates().to_dict(orient="records")
 
 
-@app.post("/api/neural/predict")
-@app.post("/neural/predict")
+async def limit_neural_prediction(request: Request):
+    await enforce_rate_limit(request, "predict-neural", limit=30, period=60)
+
+
+@app.post("/api/neural/predict", dependencies=[Depends(limit_neural_prediction)])
+@app.post("/neural/predict", dependencies=[Depends(limit_neural_prediction)])
 def neural_predict(request: NeuralPredictionRequest):
-    if model is None or teams_df is None or (scaler is None and scaler_home is None):
+    snapshot = model_artifacts.artifacts
+    if snapshot is None or snapshot.teams is None:
         raise HTTPException(status_code=503, detail="Neural network not loaded")
 
-    home_row = teams_df[teams_df['team_abbrev'] == request.home_team]
-    away_row = teams_df[teams_df['team_abbrev'] == request.away_team]
-
+    teams_df = snapshot.teams
+    home_row = teams_df[teams_df["team_abbrev"] == request.home_team]
+    away_row = teams_df[teams_df["team_abbrev"] == request.away_team]
     if home_row.empty or away_row.empty:
         raise HTTPException(status_code=404, detail="Team not found")
 
-    home_id = str(home_row.iloc[0]['team_id'])
-    away_id = str(away_row.iloc[0]['team_id'])
-
-    if home_id not in team_emas or away_id not in team_emas:
+    home_id = str(home_row.iloc[0]["team_id"])
+    away_id = str(away_row.iloc[0]["team_id"])
+    if home_id not in snapshot.team_emas or away_id not in snapshot.team_emas:
         raise HTTPException(status_code=404, detail="Team data not available")
 
-    home_ema = team_emas[home_id]
-    away_ema = team_emas[away_id]
-
-    home_feat = np.array([home_ema[s] for s in STATS], dtype=np.float32).reshape(1, -1)
-    away_feat = np.array([away_ema[s] for s in STATS], dtype=np.float32).reshape(1, -1)
-
-    if scaler_home is not None and scaler_away is not None:
-        # Match the per-side scaling used at training time
-        home_scaled = scaler_home.transform(home_feat)
-        away_scaled = scaler_away.transform(away_feat)
-        feat_scaled = np.hstack([home_scaled, away_scaled])
-    else:
-        feat_scaled = scaler.transform(np.hstack([home_feat, away_feat]))
-
-    prob = model.predict(feat_scaled, verbose=0)[0][0]
-
+    home = np.array([[snapshot.team_emas[home_id][stat] for stat in config.STATS]], dtype=np.float32)
+    away = np.array([[snapshot.team_emas[away_id][stat] for stat in config.STATS]], dtype=np.float32)
+    probability = snapshot.model.predict(snapshot.scale(home, away), verbose=0)[0][0]
     return NeuralPredictionResponse(
         home_team=request.home_team,
         away_team=request.away_team,
-        home_win_probability=float(prob)
+        home_win_probability=float(probability),
     )
 
 
-@app.post("/api/neural/retrain")
-@app.post("/neural/retrain")
-async def neural_retrain(background_tasks: BackgroundTasks):
-    background_tasks.add_task(retrain_task)
-    return {"message": "Retraining started in background. This may take several minutes."}
-
-
-async def retrain_task():
-    try:
-        loop = asyncio.get_event_loop()
-        print("Starting data update...")
-        await loop.run_in_executor(None, update_db_with_new_games, None, 7)
-        print("Data updated. Starting model training...")
-        await loop.run_in_executor(None, train_model, None)
-        print("Model trained. Reloading artifacts...")
-        load_artifacts()
-        print("Retraining completed successfully")
-    except Exception as e:
-        print(f"Error during retraining: {e}")
-
-
-# Эндпоинты со статистикой модели
-
 @app.get("/api/model/metrics/latest")
-async def get_latest_model_metrics():
-    try:
-        from database import SessionLocal
-        db = SessionLocal()
-        metrics_service = ModelMetricsService(db)
-        metrics = metrics_service.get_latest_metrics()
-        db.close()
-
-        if metrics:
-            return metrics
-        return {"message": "Model metrics not found"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting metrics: {str(e)}")
+def get_latest_model_metrics(db: Session = Depends(get_db)):
+    return ModelMetricsService(db).get_latest_metrics() or {"message": "Model metrics not found"}
 
 
 @app.get("/api/model/metrics/history")
-async def get_model_metrics_history(limit: int = 10):
-    try:
-        from database import SessionLocal
-        db = SessionLocal()
-        metrics_service = ModelMetricsService(db)
-        history = metrics_service.get_metrics_history(limit)
-        db.close()
-        return history
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting history: {str(e)}")
+def get_model_metrics_history(limit: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+    return ModelMetricsService(db).get_metrics_history(limit)
 
 
 @app.get("/api/model/metrics/stats")
-async def get_model_stats():
-    try:
-        from database import SessionLocal
-        db = SessionLocal()
-        metrics_service = ModelMetricsService(db)
-        stats = metrics_service.get_model_stats()
-        db.close()
-        return stats
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting stats: {str(e)}")
+def get_model_stats(db: Session = Depends(get_db)):
+    return ModelMetricsService(db).get_model_stats()
 
 
-# Эндпоинты для администраторов
-
-@app.get("/api/admin/update-status")
-async def get_update_status(request: Request):
-    from middleware.auth import require_admin
-    await require_admin(request)
-
+@app.get("/api/admin/update-status", dependencies=[Depends(require_admin_or_operator)])
+def get_update_status():
     return data_updater.get_status()
 
 
-@app.post("/api/admin/force-data-update")
-async def force_data_update(request: Request):
-    from middleware.auth import require_admin
-    await require_admin(request)
-
-    asyncio.create_task(data_updater.update_data_daily())
-
-    return {
-        "message": "Data update started",
-        "timestamp": datetime.now().isoformat()
-    }
+@app.post("/api/admin/force-data-update", status_code=202)
+async def force_data_update(request: Request, user=Depends(require_admin_or_operator)):
+    return await launch_job(request, user.user_id, "data-update")
 
 
-@app.post("/api/admin/force-model-retrain")
-async def force_model_retrain(request: Request):
-    from middleware.auth import require_admin
-    await require_admin(request)
-
-    asyncio.create_task(data_updater.retrain_model_weekly())
-
-    return {
-        "message": "Model retraining started",
-        "timestamp": datetime.now().isoformat()
-    }
+@app.post("/api/admin/force-model-retrain", status_code=202)
+@app.post("/api/neural/retrain", status_code=202)
+@app.post("/neural/retrain", status_code=202)
+async def force_model_retrain(request: Request, user=Depends(require_admin)):
+    return await launch_job(request, user.user_id, "model-retrain")
 
 
-# Проверка работы API
+async def launch_job(request: Request, user_id: int, name: str):
+    if data_updater.is_busy:
+        raise HTTPException(status_code=409, detail="A data or model job is already running")
+    await enforce_rate_limit(request, name, limit=1, period=60, identity=user_id)
+    if not data_updater.queue_job(name, user_id, request.url.path in {"/api/neural/retrain", "/neural/retrain"}):
+        raise HTTPException(status_code=409, detail="A data or model job is already running")
+    return {"message": "Job started", "timestamp": datetime.now(timezone.utc).isoformat()}
+
 
 @app.get("/api/health")
 @app.get("/health")
-async def health_check():
-    db_status = "unknown"
+def health_check(db: Session = Depends(get_db)):
     try:
-        from database import SessionLocal
-        from sqlalchemy import text
-        db = SessionLocal()
         db.execute(text("SELECT 1")).scalar()
-        db.close()
-        db_status = "connected"
-    except Exception as e:
-        db_status = f"error: {str(e)}"
-
-    return {
-        "status": "OK",
-        "timestamp": datetime.now().isoformat(),
-        "neural_loaded": model is not None,
-        "database": db_status,
-        "service": "HoopsAI API",
-        "scheduler_running": data_updater.scheduler.running if hasattr(data_updater, 'scheduler') else False
-    }
-
-@app.get("/api/debug/db-check")
-@app.get("/debug/db-check")
-async def check_database():
-    try:
-        from database import SessionLocal
-        db = SessionLocal()
-
-        from sqlalchemy import text
-        tables = db.execute(text("""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-        """)).fetchall()
-
-        table_list = [t[0] for t in tables]
-
-        game_count = 0
-        sample_games = []
-
-        if 'game' in table_list:
-            game_count = db.execute(text("SELECT COUNT(*) as count FROM game")).scalar()
-
-            games = db.execute(text("""
-                SELECT game_id, team_name_home, team_name_away, game_date
-                FROM game
-                LIMIT 3
-            """)).fetchall()
-
-            for row in games:
-                sample_games.append({
-                    "game_id": row[0],
-                    "home": row[1],
-                    "away": row[2],
-                    "date": str(row[3]) if row[3] else None
-                })
-
-        db.close()
-
-        return {
-            "database": "PostgreSQL",
-            "connected": True,
-            "tables": table_list,
-            "games_count": game_count,
-            "sample_games": sample_games
-        }
-    except Exception as e:
-        return {
-            "database": "PostgreSQL",
-            "connected": False,
-            "error": str(e)
-        }
+    except Exception as exc:
+        logger.warning("Database health check failed", extra={"error_type": type(exc).__name__})
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "OK"}
 
 
 # ПОДКЛЮЧЕНИЕ КОНТРОЛЛЕРОВ
@@ -383,14 +181,13 @@ async def root():
         "message": "HoopsAI API is running",
         "version": "1.0.0",
         "database": "PostgreSQL",
-        "neural_loaded": model is not None,
+        "neural_loaded": model_artifacts.artifacts is not None,
         "scheduler": {
             "daily_update": "23:59",
             "weekly_retrain": "Sunday 00:30"
         },
         "endpoints": {
             "health": "/api/health or /health",
-            "debug": "/api/debug/db-check or /debug/db-check",
             "model_metrics": {
                 "latest": "/api/model/metrics/latest",
                 "history": "/api/model/metrics/history",
@@ -409,8 +206,7 @@ async def root():
             "auth": {
                 "register": "POST /api/auth/register or /auth/register",
                 "login": "POST /api/auth/login or /auth/login",
-                "me": "GET /api/auth/me or /auth/me",
-                "init": "POST /api/auth/init or /auth/init"
+                "me": "GET /api/auth/me or /auth/me"
             },
             "teams": {
                 "all": "GET /api/teams or /teams",
@@ -433,7 +229,7 @@ async def root():
                 "by_team": "GET /api/players/team/{team_id} or /players/team/{team_id}"
             }
         },
-        "docs": "/docs"
+        "docs": app.docs_url
     }
 
 
@@ -444,5 +240,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=config.is_development
     )

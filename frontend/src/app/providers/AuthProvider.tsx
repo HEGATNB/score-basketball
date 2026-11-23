@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { apiRequest, type AuthUser } from '@/shared/api/client';
+import { apiRequest, SESSION_ENDED, type AuthUser } from '@/shared/api/client';
 import { authService } from './auth.service';
 
 interface AuthContextType {
@@ -7,6 +7,10 @@ interface AuthContextType {
   login: (identifier: string, password: string) => Promise<boolean>;
   register: (data: { email: string; password: string; name?: string; username?: string }) => Promise<boolean>;
   logout: () => void;
+  /** Updates the cached user object after a profile change. */
+  setUser: (user: AuthUser | null) => void;
+  /** Re-fetches /auth/me — call after a profile edit so the header refreshes. */
+  refreshUser: () => Promise<AuthUser | null>;
   isAdmin: boolean;
   isOperator: boolean;
   loading: boolean;
@@ -19,6 +23,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const endSession = () => setUser(null);
+    window.addEventListener(SESSION_ENDED, endSession);
+    return () => window.removeEventListener(SESSION_ENDED, endSession);
+  }, []);
+
+  useEffect(() => {
     if (!authService.isAuthenticated()) {
       setLoading(false);
       return;
@@ -26,7 +36,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     apiRequest<AuthUser>('/auth/me', undefined, false)
       .then((profile) => setUser(profile))
-      .catch(() => authService.logout())
+      .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
 
@@ -37,7 +47,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return true;
     } catch (error) {
       console.error('Login failed', error);
-      return false;
+      throw error;
     }
   };
 
@@ -54,7 +64,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     setUser(null);
-    authService.logout();
+    void authService.logout().catch((error) => console.error("Server sign-out failed", error));
+  };
+
+  const refreshUser = async (): Promise<AuthUser | null> => {
+    try {
+      const profile = await apiRequest<AuthUser>('/auth/me', undefined, false);
+      setUser(profile);
+      return profile;
+    } catch {
+      return null;
+    }
   };
 
   return (
@@ -64,6 +84,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         register,
         logout,
+        setUser,
+        refreshUser,
         isAdmin: user?.role === 'admin',
         isOperator: user?.role === 'operator' || user?.role === 'admin',
         loading,

@@ -568,7 +568,7 @@ export const HistoryPage = () => {
                           Счёт
                         </div>
                         <div className="mt-1 font-mono text-lg tab-num">
-                          {pred.expectedScoreTeam1}–{pred.expectedScoreTeam2}
+                          {pred.expectedScoreTeam1 ?? '—'}–{pred.expectedScoreTeam2 ?? '—'}
                         </div>
                       </div>
                       <div className="text-right">

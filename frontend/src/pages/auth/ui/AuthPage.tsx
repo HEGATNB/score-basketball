@@ -1,18 +1,13 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Trophy, User2, Zap } from 'lucide-react';
 import { useAuth } from '@/app/providers/AuthProvider';
 
-// Background image for the auth screen. To use a custom image instead of the
-// default, drop a file into `frontend/public/auth-bg.jpg` and change this to
-// `/auth-bg.jpg`.
-//
-// Current default: Unsplash basketball hoop photo (verified, atmospheric).
-const BG_IMG =
-  'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=1600&q=80&auto=format&fit=crop';
+const BG_IMG = import.meta.env.BASE_URL + 'score-courtside-photo.webp';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const { state } = useLocation();
   const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [identifier, setIdentifier] = useState('');
@@ -41,7 +36,13 @@ export default function AuthPage() {
           return;
         }
       }
-      navigate('/');
+      const from = state?.from;
+      const path = from?.pathname;
+      if (typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') && !path.includes('\\')) {
+        navigate({ pathname: path, search: from.search, hash: from.hash }, { replace: true });
+      } else {
+        navigate('/account', { replace: true });
+      }
     } catch (err: any) {
       setError(err?.message || 'Ошибка авторизации.');
     } finally {
@@ -69,7 +70,7 @@ export default function AuthPage() {
         className="absolute inset-0 z-0"
         style={{
           background:
-            'linear-gradient(100deg, rgba(6,7,10,0.94) 0%, rgba(6,7,10,0.74) 32%, rgba(6,7,10,0.42) 58%, rgba(6,7,10,0.80) 100%), radial-gradient(ellipse 60% 60% at 12% 22%, rgba(255,90,31,0.20), transparent 60%)',
+            'linear-gradient(100deg, rgba(6,7,10,0.94) 0%, rgba(6,7,10,0.74) 32%, rgba(6,7,10,0.42) 58%, rgba(6,7,10,0.80) 100%), radial-gradient(ellipse 60% 60% at 12% 22%, rgba(210,106,52,0.20), transparent 60%)',
         }}
       />
       {/* Layer 3: subtle scanlines for cinematic texture */}
@@ -103,7 +104,7 @@ export default function AuthPage() {
             <span className="tag">SEASON 2025/26</span>
             <span className="tag tag-gold">
               <Trophy className="h-3 w-3" />
-              ИИ-АНАЛИТИКА
+              MODEL ACCESS
             </span>
           </div>
 
@@ -113,15 +114,15 @@ export default function AuthPage() {
           >
             {isLogin ? (
               <>
-                <span className="stroked-text">С ВОЗВРАЩЕНИЕМ.</span>
+                <span className="stroked-text">КАБИНЕТ</span>
                 <br />
-                <em>ИГРА</em> ИДЁТ.
+                <em>АНАЛИТИКА</em> ОТКРЫТ.
               </>
             ) : (
               <>
-                <span className="stroked-text">ПОЛУЧИ</span>
+                <span className="stroked-text">СОЗДАЙ</span>
                 <br />
-                <em>ПРОПУСК</em> НА КОРТ.
+                <em>ПРОФИЛЬ</em> АНАЛИТИКА.
               </>
             )}
           </h1>
@@ -133,8 +134,8 @@ export default function AuthPage() {
           <div className="flex flex-col gap-7">
             <p className="max-w-[520px] text-[16px] leading-relaxed text-[var(--text-2)]">
               {isLogin
-                ? 'Войди и продолжи там, где остановился: твоя история прогнозов, рейтинг недели, бейджи и точность ИИ — всё на месте.'
-                : 'Минута на регистрацию — и ты сохраняешь прогнозы, копишь XP, поднимаешься в лиге и получаешь бейджи.'}
+                ? 'Войди и продолжи работу с историей прогнозов, точностью модели и персональной статистикой.'
+                : 'Создай профиль, чтобы сохранять прогнозы, отслеживать точность и видеть динамику решений по матчам.'}
             </p>
 
             {/* Vertical feature list — replaces tiny chips */}
@@ -142,8 +143,8 @@ export default function AuthPage() {
               {[
                 {
                   icon: <Trophy className="h-5 w-5" />,
-                  lbl: 'Рейтинг недели',
-                  desc: 'Каждый прогноз идёт в копилку XP. Поднимайся в лиге, забирай бейджи.',
+                  lbl: 'Статус профиля',
+                  desc: 'Каждый прогноз сохраняется в истории и влияет на точность, статус и прогресс.',
                 },
                 {
                   icon: <Zap className="h-5 w-5" />,
@@ -153,7 +154,7 @@ export default function AuthPage() {
                 {
                   icon: <ShieldCheck className="h-5 w-5" />,
                   lbl: 'История прогнозов',
-                  desc: 'Все ходы сохранены. Видишь свою точность, стрики и слабые места.',
+                  desc: 'Все прогнозы сохранены. Видишь точность, серии решений и зоны для улучшения.',
                 },
               ].map((p) => (
                 <div
@@ -163,7 +164,7 @@ export default function AuthPage() {
                 >
                   <div
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
-                    style={{ background: 'rgba(255,90,31,0.14)', color: 'var(--accent)' }}
+                    style={{ background: 'rgba(210,106,52,0.14)', color: 'var(--accent)' }}
                   >
                     {p.icon}
                   </div>
@@ -203,7 +204,7 @@ export default function AuthPage() {
                 }}
                 className={`flex-1 rounded-pill px-4 py-2 text-xs font-semibold transition ${
                   isLogin === v
-                    ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                    ? 'bg-[var(--accent)] text-white'
                     : 'text-[var(--text-2)] hover:text-[var(--text)]'
                 }`}
               >

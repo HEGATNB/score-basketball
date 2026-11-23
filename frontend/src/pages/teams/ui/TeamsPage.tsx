@@ -20,17 +20,24 @@ function getDifferential(team: Team) {
 export const TeamsPage = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [view, setView] = useState<TeamView>('cards');
   const [conference, setConference] = useState<ConferenceFilter>('all');
 
   useEffect(() => {
-    apiRequest<Team[]>('/teams')
-      .then((d) => setTeams([...d].sort((a, b) => b.wins - a.wins)))
-      .catch(() => setError('Не удалось загрузить команды.'))
-      .finally(() => setLoading(false));
-  }, []);
+    let active = true;
+    setLoading(true);
+    setError('');
+    apiRequest<Team[]>('/teams', undefined, false)
+      .then((data) => {
+        if (active) setTeams([...data].sort((a, b) => getWinRate(b) - getWinRate(a) || a.name.localeCompare(b.name)));
+      })
+      .catch(() => { if (active) setError('Не удалось загрузить команды.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [revision]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -46,14 +53,11 @@ export const TeamsPage = () => {
     });
   }, [search, conference, teams]);
 
-  const avgOff = useMemo(
-    () => (teams.length ? teams.reduce((s, t) => s + t.avgPointsFor, 0) / teams.length : 0),
-    [teams],
-  );
-  const bestDiff = useMemo(
-    () => (teams.length ? [...teams].sort((a, b) => getDifferential(b) - getDifferential(a))[0] : null),
-    [teams],
-  );
+  const measured = teams.filter((team) => team.hasStats !== false && team.wins + team.losses > 0);
+  const offense = measured.filter((team) => team.avgPointsFor > 0 && team.avgPointsAgainst > 0);
+  const avgOff = offense.length ? offense.reduce((sum, team) => sum + team.avgPointsFor, 0) / offense.length : null;
+  const bestDiff = [...offense].sort((a, b) => getDifferential(b) - getDifferential(a))[0];
+  const leader = measured[0];
 
   if (loading) {
     return (
@@ -65,7 +69,9 @@ export const TeamsPage = () => {
   if (error) {
     return (
       <div className="container-x py-20">
-        <div className="card border-[rgba(255,56,88,0.25)] bg-[rgba(255,56,88,0.06)] p-8 text-[var(--danger)]">{error}</div>
+        <div className="card border-[rgba(255,56,88,0.25)] bg-[rgba(255,56,88,0.06)] p-8 text-[var(--danger)]">{error}
+          <button type="button" className="btn btn-secondary ml-4" onClick={() => setRevision((value) => value + 1)}>Повторить</button>
+        </div>
       </div>
     );
   }
@@ -76,20 +82,17 @@ export const TeamsPage = () => {
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЛИГА · 30 КЛУБОВ</span>
-              <h2>
-                ВСЯ <em>ЛИГА</em><br />ОДНИМ ВЗГЛЯДОМ
-              </h2>
+              <h1 className="display-h text-4xl sm:text-6xl">Команды NBA</h1>
             </div>
             <p className="lead">
-              Полная турнирная таблица, проценты побед и net-rating. Кликни команду — детальный профиль.
+              Составы, статистика и новости клубов. Выберите команду, чтобы открыть её профиль.
             </p>
           </div>
 
           {/* Stat band */}
           <div
-            className="mb-8 grid overflow-hidden rounded-lg border border-[var(--line)]"
-            style={{ gap: 1, background: 'var(--line)', gridTemplateColumns: 'repeat(4, 1fr)' }}
+            className="mb-8 grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--line)] sm:grid-cols-4"
+            style={{ gap: 1, background: 'var(--line)' }}
           >
             <div className="bg-[var(--surface)] p-5">
               <div
@@ -98,9 +101,9 @@ export const TeamsPage = () => {
               >
                 Лидер
               </div>
-              <div className="font-display text-2xl uppercase">{teams[0]?.abbrev || '—'}</div>
+              <div className="font-display text-2xl uppercase">{leader?.abbrev || '—'}</div>
               <div className="mt-1 font-mono text-xs" style={{ color: 'var(--accent)' }}>
-                {teams[0] ? `${teams[0].wins}–${teams[0].losses}` : '—'}
+                {leader ? leader.wins + '–' + leader.losses : '—'}
               </div>
             </div>
             <div className="bg-[var(--surface)] p-5">
@@ -108,9 +111,9 @@ export const TeamsPage = () => {
                 className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
                 style={{ letterSpacing: '0.16em' }}
               >
-                Лиговая атака
+                Средняя атака
               </div>
-              <div className="font-display text-3xl tab-num">{avgOff.toFixed(1)}</div>
+              <div className="font-display text-3xl tab-num">{avgOff?.toFixed(1) ?? '—'}</div>
               <div className="mt-1 text-xs text-[var(--text-3)]">PPG среднее</div>
             </div>
             <div className="bg-[var(--surface)] p-5">
@@ -130,7 +133,7 @@ export const TeamsPage = () => {
                 className="mb-1.5 font-mono text-[10px] uppercase text-[var(--text-3)]"
                 style={{ letterSpacing: '0.16em' }}
               >
-                Видимо
+                В выборке
               </div>
               <div className="font-display text-3xl tab-num">{filtered.length}</div>
               <div className="mt-1 text-xs text-[var(--text-3)]">после фильтров</div>
@@ -139,7 +142,7 @@ export const TeamsPage = () => {
 
           {/* Filters */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 lg:max-w-md">
+            <div className="relative min-w-0 flex-[1_1_14rem] lg:max-w-md">
               <Search
                 className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2"
                 style={{ color: 'var(--text-3)' }}
@@ -147,7 +150,7 @@ export const TeamsPage = () => {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск Boston, Atlantic, BOS…"
+                placeholder="Поиск: Boston, Atlantic, BOS..."
                 className="field pl-11 pr-11"
               />
               {search && (
@@ -168,7 +171,7 @@ export const TeamsPage = () => {
                   onClick={() => setConference(c)}
                   className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                     conference === c
-                      ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                      ? 'bg-[var(--accent)] text-white'
                       : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
@@ -184,7 +187,7 @@ export const TeamsPage = () => {
                   onClick={() => setView(v)}
                   className={`rounded-pill px-3.5 py-1.5 text-xs font-semibold transition ${
                     view === v
-                      ? 'bg-[var(--accent)] text-[#0a0a0c]'
+                      ? 'bg-[var(--accent)] text-white'
                       : 'text-[var(--text-2)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
@@ -194,6 +197,10 @@ export const TeamsPage = () => {
             </div>
           </div>
 
+          {teams.some((team) => team.source === 'catalog') && (
+            <p className="score-feed-note mb-4" role="status">Каталог команд доступен. Часть сезонной статистики пока не загрузилась.</p>
+          )}
+          {!filtered.length && <p className="score-panel mb-5 p-5" role="status">По этим фильтрам команд нет.</p>}
           {view === 'cards' ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filtered.map((t, i) => {
@@ -230,7 +237,7 @@ export const TeamsPage = () => {
                             ЗАП
                           </div>
                           <div className="mt-1 font-display text-lg tab-num">
-                            {t.wins}–{t.losses}
+                            {t.hasStats === false ? '—' : t.wins + '–' + t.losses}
                           </div>
                         </div>
                         <div className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-2.5">
@@ -240,7 +247,7 @@ export const TeamsPage = () => {
                           >
                             WIN%
                           </div>
-                          <div className="mt-1 font-display text-lg tab-num">{winPct.toFixed(1)}</div>
+                          <div className="mt-1 font-display text-lg tab-num">{t.hasStats === false ? '—' : winPct.toFixed(1)}</div>
                         </div>
                         <div className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-2.5">
                           <div
@@ -253,8 +260,7 @@ export const TeamsPage = () => {
                             className="mt-1 font-display text-lg tab-num"
                             style={{ color: diff >= 0 ? 'var(--ok)' : 'var(--danger)' }}
                           >
-                            {diff >= 0 ? '+' : ''}
-                            {diff.toFixed(1)}
+                            {t.hasStats === false || !t.avgPointsFor || !t.avgPointsAgainst ? '—' : (diff >= 0 ? '+' : '') + diff.toFixed(1)}
                           </div>
                         </div>
                       </div>
@@ -263,14 +269,14 @@ export const TeamsPage = () => {
                         <div
                           className="h-full"
                           style={{
-                            width: `${Math.max(8, winPct)}%`,
-                            background: 'linear-gradient(90deg, var(--accent), var(--gold))',
+                            width: winPct + '%',
+                            background: 'linear-gradient(90deg, var(--accent-deep), var(--accent-strong))',
                           }}
                         />
                       </div>
 
                       <div className="mt-4 flex items-center justify-between text-xs text-[var(--text-3)]">
-                        <span>{winPct.toFixed(1)}% побед</span>
+                        <span>{t.hasStats === false ? t.abbrev : winPct.toFixed(1) + '% побед'}</span>
                         <span className="flex items-center gap-1 text-[var(--text-2)] transition group-hover:text-[var(--accent)]">
                           Открыть <ArrowUpRight className="h-3 w-3" />
                         </span>
@@ -303,27 +309,25 @@ export const TeamsPage = () => {
                         <tr
                           key={t.id}
                           className={`${i < 3 ? 'hot ' : ''}cursor-pointer`}
-                          onClick={() => (window.location.href = `/teams/${t.id}`)}
                         >
                           <td className="font-mono">{String(i + 1).padStart(2, '0')}</td>
                           <td>
-                            <div className="flex items-center gap-2.5">
+                            <Link to={'/teams/' + t.id} className="flex items-center gap-2.5">
                               <TeamMark team={t} size="sm" />
                               <span className="font-semibold">{t.name}</span>
                               <span className="text-xs text-[var(--text-3)]">{t.city || '—'}</span>
-                            </div>
+                            </Link>
                           </td>
-                          <td className="pct">{t.wins}</td>
-                          <td className="pct">{t.losses}</td>
-                          <td className="pct">{getWinRate(t).toFixed(1)}%</td>
-                          <td className="pct">{t.avgPointsFor.toFixed(1)}</td>
-                          <td className="pct">{t.avgPointsAgainst.toFixed(1)}</td>
+                          <td className="pct">{t.hasStats === false ? '—' : t.wins}</td>
+                          <td className="pct">{t.hasStats === false ? '—' : t.losses}</td>
+                          <td className="pct">{t.hasStats === false ? '—' : getWinRate(t).toFixed(1) + '%'}</td>
+                          <td className="pct">{t.avgPointsFor ? t.avgPointsFor.toFixed(1) : '—'}</td>
+                          <td className="pct">{t.avgPointsAgainst ? t.avgPointsAgainst.toFixed(1) : '—'}</td>
                           <td
                             className="pct"
                             style={{ color: diff >= 0 ? 'var(--ok)' : 'var(--danger)' }}
                           >
-                            {diff >= 0 ? '+' : ''}
-                            {diff.toFixed(1)}
+                            {t.hasStats === false || !t.avgPointsFor || !t.avgPointsAgainst ? '—' : (diff >= 0 ? '+' : '') + diff.toFixed(1)}
                           </td>
                         </tr>
                       );

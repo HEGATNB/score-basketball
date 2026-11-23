@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, Union
 from datetime import datetime
@@ -9,6 +11,9 @@ from scripts.auth import get_password_hash, verify_password
 from repositories.user_repository import UserRepository
 
 
+logger = logging.getLogger(__name__)
+
+
 class AuthService:
     def __init__(self, db: Session):
         self.db = db
@@ -17,54 +22,45 @@ class AuthService:
     def authenticate_user(self, email: str, password: str) -> Optional[Dict[str, Any]]:
         # Аутентификация пользователя по email
         try:
-            print(f"Попытка аутентификации по email: {email}")
 
             user = self.user_repo.get_by_email(email)
 
             if not user:
-                print(f"Пользователь с email {email} не найден")
                 return None
 
             return self._verify_and_return_user(user, password)
 
         except Exception as e:
-            print(f"Ошибка аутентификации: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Authentication query failed", extra={"error_type": type(e).__name__})
             return None
 
     def authenticate_by_username(self, username: str, password: str) -> Optional[Dict[str, Any]]:
         # Аутентификация пользователя по username
         try:
-            print(f"Попытка аутентификации по username: {username}")
 
             user = self.user_repo.get_by_username(username)
 
             if not user:
-                print(f"Пользователь с username {username} не найден")
                 return None
 
             return self._verify_and_return_user(user, password)
 
         except Exception as e:
-            print(f"Ошибка аутентификации: {e}")
+            logger.error("Authentication query failed", extra={"error_type": type(e).__name__})
             return None
 
     def _verify_and_return_user(self, user: Dict, password: str) -> Optional[Dict[str, Any]]:
         # Проверка пароля по хешу
         stored_hash = user.get("password_hash")
         if not stored_hash:
-            print("У пользователя нет хеша пароля")
             return None
 
         is_valid = verify_password(password, stored_hash)
-        print(f"Результат проверки пароля: {is_valid}")
 
         if not is_valid:
             return None
 
         if user.get("is_blocked"):
-            print("Пользователь заблокирован")
             return None
 
         return {
@@ -85,14 +81,12 @@ class AuthService:
 
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            # Хешируем пароль
+            # Хеширование пароль
             password_hash = get_password_hash(user_data["password"])
-            print(f"Создан хеш пароля: {password_hash[:20]}...")
 
-            # Определяем username
             username = user_data.get("username") or user_data.get("name") or user_data["email"].split('@')[0]
 
-            # Создаем пользователя через репозиторий
+            # Создание пользователя через репозиторий
             user = self.user_repo.create(
                 email=user_data["email"],
                 name=user_data.get("name", username),
@@ -101,48 +95,43 @@ class AuthService:
                 role=user_data.get("role", "user")
             )
 
-            print(f"Создан пользователь: {user['email']} с ID={user['id']}")
             return user
 
         except Exception as e:
-            print(f"Ошибка создания пользователя: {e}")
             raise
 
-    def init_database(self) -> Dict[str, Any]:
-        # Инициализация тестовые пользователи
-        created_users = []
+    def update_profile(self, user_id: int, name: Optional[str] = None,
+                       username: Optional[str] = None,
+                       email: Optional[str] = None) -> Dict[str, Any]:
+        if email is not None:
+            email = email.strip().lower()
+            if not email or "@" not in email:
+                raise ValueError("Invalid email")
+            if self.user_repo.email_exists(email, except_user_id=user_id):
+                raise ValueError("This email is already in use")
+        if username is not None:
+            username = username.strip()
+            if not username:
+                raise ValueError("Username cannot be empty")
+            if self.user_repo.username_exists(username, except_user_id=user_id):
+                raise ValueError("This username is already taken")
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise ValueError("Name cannot be empty")
+        updated = self.user_repo.update_profile(user_id, name=name, username=username, email=email)
+        if not updated:
+            raise ValueError("User was not found")
+        return updated
 
-        test_users = [
-            {"email": "admin@sys.com", "name": "Admin", "username": "admin", "password": "admin", "role": "admin"},
-            {"email": "operator@sys.com", "name": "Operator", "username": "operator", "password": "operator",
-             "role": "operator"},
-            {"email": "user@sys.com", "name": "User", "username": "user", "password": "user", "role": "user"},
-        ]
-
-        for user_data in test_users:
-            try:
-                # Проверяем, существует ли пользователь
-                existing = self.get_user_by_email(user_data["email"])
-                if existing:
-                    print(f"Пользователь {user_data['email']} уже существует")
-                    created_users.append(user_data["email"])
-                    continue
-
-                # Создание пользователя
-                password_hash = get_password_hash(user_data["password"])
-
-                self.user_repo.create(
-                    email=user_data["email"],
-                    name=user_data["name"],
-                    username=user_data["username"],
-                    password_hash=password_hash,
-                    role=user_data["role"]
-                )
-
-                created_users.append(user_data["email"])
-                print(f"Создан тестовый пользователь: {user_data['email']}")
-
-            except Exception as e:
-                print(f"Ошибка создания {user_data['email']}: {e}")
-
-        return {"created_users": created_users}
+    def change_password(self, user_id: int, current_password: str, new_password: str) -> bool:
+        if not new_password or len(new_password) < 4:
+            raise ValueError("New password must be at least 4 characters long")
+        current_hash = self.user_repo.get_password_hash(user_id)
+        if not current_hash:
+            raise ValueError("User was not found")
+        if not verify_password(current_password, current_hash):
+            raise ValueError("Current password is incorrect")
+        new_hash = get_password_hash(new_password)
+        self.user_repo.update_password(user_id, new_hash)
+        return True

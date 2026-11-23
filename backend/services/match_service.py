@@ -1,7 +1,7 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+from sqlalchemy.orm import Session
 
 from repositories.game_repository import GameRepository
 
@@ -18,12 +18,17 @@ class MatchService:
             if filters and filters.get("status"):
                 status_filter = filters["status"]
 
-            games = self.game_repo.get_all(status_filter=status_filter, skip=skip, limit=limit)
+            games = self.game_repo.get_all(
+                status_filter=status_filter, skip=skip, limit=limit,
+                upcoming_from=(filters or {}).get("upcoming_from"),
+                team_id=(filters or {}).get("team_id"),
+            )
 
             matches = []
-            used_ids = set()
 
             for game in games:
+                game_id_val = game.get("game_id")
+                source_is_espn = str(game_id_val).startswith("ESPN_")
                 # Определяем статус по наличию счета
                 has_score = (game.get("pts_home") is not None and
                              game.get("pts_away") is not None and
@@ -44,6 +49,8 @@ class MatchService:
                 date_str = None
                 if game_date:
                     if isinstance(game_date, datetime):
+                        if source_is_espn and game_date.tzinfo is None:
+                            game_date = game_date.replace(tzinfo=timezone.utc)
                         date_str = game_date.isoformat()
                     elif isinstance(game_date, str):
                         try:
@@ -51,22 +58,15 @@ class MatchService:
                                 date_obj = datetime.strptime(game_date, "%Y-%m-%d %H:%M:%S")
                             else:
                                 date_obj = datetime.fromisoformat(game_date)
+                            if source_is_espn and date_obj.tzinfo is None:
+                                date_obj = date_obj.replace(tzinfo=timezone.utc)
                             date_str = date_obj.isoformat()
                         except:
                             date_str = game_date
 
-                # Генерируем уникальный ID
-                game_id_val = game.get("game_id")
-                season_id_val = game.get("season_id")
-                unique_key = f"{game_id_val}_{season_id_val}"
-                match_id = abs(hash(unique_key)) % (10 ** 8)
-
-                original_id = match_id
-                counter = 1
-                while match_id in used_ids:
-                    match_id = (original_id + counter) % (10 ** 8)
-                    counter += 1
-                used_ids.add(match_id)
+                # Keep archive URLs consistent across workers and deployments.
+                unique_key = f"{game_id_val}_{game.get('season_id')}".encode()
+                match_id = int.from_bytes(hashlib.blake2b(unique_key, digest_size=6).digest(), "big")
 
                 home_team_name = game.get("home_team_name")
                 away_team_name = game.get("away_team_name")
@@ -104,8 +104,7 @@ class MatchService:
 
         except Exception as e:
             print(f"Error getting matches: {e}")
-            import traceback
-            traceback.print_exc()
+            self.db.rollback()
             return []
 
     def get_match_by_id(self, match_id: int) -> Optional[Dict[str, Any]]:
@@ -116,6 +115,10 @@ class MatchService:
             for match in matches:
                 if match["id"] == match_id:
                     return match
+                if match_id < 10 ** 8:
+                    legacy_key = f"{match['game_id']}_{match['season']}"
+                    if abs(hash(legacy_key)) % (10 ** 8) == match_id:
+                        return match
             return None
 
         except Exception as e:

@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Crown,
+  Flame,
+  Gem,
   Lock,
-  Play,
-  Trophy,
+  Target,
 } from 'lucide-react';
 import { apiRequest, type Match, type Player, type Team } from '@/shared/api/client';
 import { useAuth } from '@/app/providers/AuthProvider';
-import { LoadingSpinner } from '@/shared/ui/LoadingSpinner';
-import { Marquee } from '@/shared/ui/Marquee';
+import { useLanguage, useT } from '@/shared/i18n';
 import { TeamMark } from '@/shared/ui/TeamMark';
 import { TeamLogo } from '@/shared/ui/TeamLogo';
-import { MatchCard } from '@/shared/ui/MatchCard';
+import { predictionLink, ScoreRow } from '@/shared/ui/ScoreRow';
 import { PlayerCard } from '@/shared/ui/PlayerCard';
 import { PlayerDetailModal } from '@/shared/ui/PlayerDetailModal';
 import { LivePanel } from '@/shared/ui/LivePanel';
@@ -23,27 +24,129 @@ import { NewsModal } from '@/shared/ui/NewsModal';
 import { HighlightsCarousel } from '@/shared/ui/HighlightsCarousel';
 import { NewsBentoCard, NewsBentoFeature } from '@/shared/ui/NewsBentoCard';
 
-const HERO_FRAMES = [
-  'https://images.pexels.com/photos/2834917/pexels-photo-2834917.jpeg?auto=compress&cs=tinysrgb&w=1600',
-  'https://images.pexels.com/photos/2304442/pexels-photo-2304442.jpeg?auto=compress&cs=tinysrgb&w=1600',
-  'https://images.pexels.com/photos/1080884/pexels-photo-1080884.jpeg?auto=compress&cs=tinysrgb&w=1600',
-  'https://images.pexels.com/photos/8007522/pexels-photo-8007522.jpeg?auto=compress&cs=tinysrgb&w=1600',
-];
-
 interface PredictStats {
   totalPredictions?: number;
-  totalUsers?: number;
-  totalTrainingGames?: number;
-  accuracy?: number;
-  modelVersion?: string;
+  accuracy?: number | null;
 }
 
-const CHALLENGES = [
-  { id: 'c1', icon: '🔥', title: '5 ПОДРЯД', desc: 'Угадай 5 матчей без промахов', progress: 60, value: '3 / 5', reward: '+250 XP', color: '#ff5a1f' },
-  { id: 'c2', icon: '🎯', title: 'ЛИГА АНАЛИТИКОВ', desc: '70% точности за неделю', progress: 88, value: '62% / 70%', reward: '+500 XP', color: '#5db8ff' },
-  { id: 'c3', icon: '💎', title: 'АНДЕРДОГ', desc: 'Угадай 3 матча против ИИ', progress: 33, value: '1 / 3', reward: '+700 XP', color: '#d1ff3a' },
-  { id: 'c4', icon: '🏆', title: 'ЧЕМПИОН НЕДЕЛИ', desc: 'Топ-10 в недельном рейтинге', progress: 100, value: 'РАЗБЛОКИРОВАНО', reward: '+1000 XP', color: '#ffb800' },
-];
+interface HomeSummary {
+  topTeams: Team[];
+  topPlayers: Player[];
+  upcomingMatches: Match[];
+  recentMatches: Match[];
+  scheduleUnavailable?: boolean;
+}
+
+interface ChallengeCardData {
+  id: string;
+  icon: 'streak' | 'accuracy' | 'underdog' | 'champion';
+  title: string;
+  desc: string;
+  progress: number;
+  value: string;
+  reward: string;
+  color: string;
+  locked?: boolean;
+}
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)));
+}
+
+function buildChallengeCards(userStats: any, backendChallenges: any[] = []): ChallengeCardData[] {
+  const completed = Number(userStats?.completedPredictions ?? 0);
+  const accuracy = Number(userStats?.accuracy ?? 0);
+  const streak = Number(userStats?.currentStreak ?? 0);
+  const underdogCorrect = Number(userStats?.categories?.underdog?.correct ?? 0);
+  const rank = Number(userStats?.rank ?? 0);
+
+  if (!userStats && backendChallenges.length > 0) {
+    return backendChallenges.slice(0, 4).map((challenge) => {
+      const id = String(challenge.id || '');
+      const isAccuracy = id.includes('accuracy');
+      const isUnderdog = id.includes('underdog');
+      const isTop = id.includes('top');
+      return {
+        id: id || String(challenge.title || 'challenge'),
+        icon: isAccuracy ? 'accuracy' : isUnderdog ? 'underdog' : isTop ? 'champion' : 'streak',
+        title: String(
+          challenge.title ||
+            (isAccuracy
+              ? 'WEEKLY ACCURACY'
+              : isUnderdog
+                ? 'DIFFICULT MATCHUP'
+                : isTop
+                  ? 'WEEKLY TOP'
+                  : 'DECISION STREAK'),
+        ),
+        desc: String(
+          challenge.desc ||
+            (isAccuracy
+              ? '70% threshold on completed games'
+              : isUnderdog
+                ? '3 correct picks against the favorite'
+                : isTop
+                  ? 'Top 10 by prediction quality'
+                  : '5 correct predictions without a miss'),
+        ),
+        progress: clampProgress(Number(challenge.progress ?? 0)),
+        value: String(challenge.value || '0 / 0').replace('РАЗБЛОКИРОВАНО', 'UNLOCKED'),
+        reward: String(challenge.reward || '').replace('XP', 'pts'),
+        color: challenge.color || '#d26a34',
+        locked: Boolean(challenge.locked),
+      };
+    });
+  }
+
+  const accuracyReady = completed >= 5;
+  const accuracyProgress = accuracyReady ? (accuracy / 70) * 100 : (completed / 5) * 100;
+  const topProgress = rank > 0 ? (rank <= 10 ? 100 : Math.max(0, ((50 - rank) / 40) * 100)) : 0;
+
+  return [
+    {
+      id: 'streak_5',
+      icon: 'streak',
+      title: 'DECISION STREAK',
+      desc: '5 correct predictions without a miss',
+      progress: clampProgress((streak / 5) * 100),
+      value: `${streak} / 5`,
+      reward: '+250 pts',
+      color: '#d26a34',
+    },
+    {
+      id: 'accuracy_70',
+      icon: 'accuracy',
+      title: 'WEEKLY ACCURACY',
+      desc: accuracyReady ? '70% threshold on completed games' : 'Requires at least 5 completed predictions',
+      progress: clampProgress(accuracyProgress),
+      value: accuracyReady ? `${Math.round(accuracy)}% / 70%` : `${completed} / 5 predictions`,
+      reward: '+500 pts',
+      color: '#d99a4f',
+      locked: !accuracyReady,
+    },
+    {
+      id: 'underdog_3',
+      icon: 'underdog',
+      title: 'DIFFICULT MATCHUP',
+      desc: '3 correct picks against the favorite',
+      progress: clampProgress((underdogCorrect / 3) * 100),
+      value: `${underdogCorrect} / 3`,
+      reward: '+700 pts',
+      color: '#36d399',
+    },
+    {
+      id: 'top_10',
+      icon: 'champion',
+      title: 'WEEKLY TOP',
+      desc: 'Top 10 by prediction quality',
+      progress: clampProgress(topProgress),
+      value: rank > 0 ? `#${rank}${rank <= 10 ? ' · UNLOCKED' : ''}` : 'Make your first prediction',
+      reward: '+1000 pts',
+      color: '#e3b341',
+      locked: rank <= 0,
+    },
+  ];
+}
 
 function relativeTime(iso: string | null): string {
   if (!iso) return '';
@@ -62,55 +165,69 @@ function relativeTime(iso: string | null): string {
   }
 }
 
+function ChallengeIcon({ icon }: { icon?: string }) {
+  const cls = "h-6 w-6";
+  if (icon === 'accuracy') return <Target className={cls} strokeWidth={1.8} />;
+  if (icon === 'underdog') return <Gem className={cls} strokeWidth={1.8} />;
+  if (icon === 'champion') return <Crown className={cls} strokeWidth={1.8} />;
+  return <Flame className={cls} strokeWidth={1.8} />;
+}
+
 export const HomePage = () => {
   const { user } = useAuth();
+  const t = useT();
+  const { language } = useLanguage();
   const navigate = useNavigate();
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [stats, setStats] = useState<PredictStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingSchedule, setLoadingSchedule] = useState(true);
+  const [scheduleFailed, setScheduleFailed] = useState(false);
   const [news, setNews] = useState<LiveNewsItem[]>([]);
   const [myStats, setMyStats] = useState<any>(null);
   const [myChallenges, setMyChallenges] = useState<any[]>([]);
   const [activeNews, setActiveNews] = useState<LiveNewsItem | null>(null);
   const [activePlayer, setActivePlayer] = useState<Player | null>(null);
-
   const playersRailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let active = true;
+    const setTopTeams = (data: Team[]) => setTeams([...data].sort((a, b) => b.wins - a.wins));
+
     const load = async () => {
       try {
-        const summary = await apiRequest<any>('/home/summary').catch(() => null);
-        if (summary && (summary.topTeams || summary.upcomingMatches)) {
-          const all = [...(summary.upcomingMatches || []), ...(summary.recentMatches || [])];
-          setTeams([...(summary.topTeams || [])].sort((a: Team, b: Team) => b.wins - a.wins));
-          setMatches(all);
-          setPlayers(summary.topPlayers || []);
-          apiRequest<any>('/predict/stats').then(setStats).catch(() => undefined);
-        } else {
-          const [t, m, s, p] = await Promise.all([
-            apiRequest<Team[]>('/teams'),
-            apiRequest<Match[]>('/matches?limit=12'),
-            apiRequest<any>('/predict/stats').catch(() => ({})),
-            apiRequest<Player[]>('/players?limit=16&sort_by=pts&sort_order=desc&min_games=5').catch(() => []),
-          ]);
-          setTeams([...t].sort((a, b) => b.wins - a.wins));
-          setMatches(m);
-          setStats(s);
-          setPlayers(p);
-        }
-      } catch (e) {
-        console.error('home load', e);
+        const summary = await apiRequest<HomeSummary>('/home/summary');
+        if (!active) return;
+        setTopTeams(summary.topTeams);
+        setMatches([...summary.upcomingMatches, ...summary.recentMatches]);
+        setScheduleFailed(Boolean(summary.scheduleUnavailable));
+        setPlayers(summary.topPlayers);
+      } catch {
+        const [teamsResponse, matchesResponse, playersResponse] = await Promise.allSettled([
+          apiRequest<Team[]>('/teams'),
+          apiRequest<Match[]>('/matches?limit=24'),
+          apiRequest<Player[]>('/players?limit=16&sort_by=pts&sort_order=desc&min_games=5'),
+        ]);
+        if (!active) return;
+        if (teamsResponse.status === 'fulfilled') setTopTeams(teamsResponse.value);
+        if (matchesResponse.status === 'fulfilled') setMatches(matchesResponse.value);
+        else setScheduleFailed(true);
+        if (playersResponse.status === 'fulfilled') setPlayers(playersResponse.value);
       } finally {
-        setLoading(false);
+        if (active) setLoadingSchedule(false);
       }
     };
-    load();
 
-    // News (independent — non-blocking, falls back to empty).
-    // Homepage shows only a teaser; the full feed lives at /news.
-    liveApi.news(6).then(setNews).catch(() => setNews([]));
+    void load();
+    apiRequest<PredictStats>('/predict/stats').then((data) => {
+      if (active) setStats(data);
+    }).catch(() => undefined);
+    liveApi.newsFeed(6).then(({ items: data }) => {
+      if (active) setNews(data);
+    }).catch(() => undefined);
+
+    return () => { active = false; };
   }, []);
 
   // Real user stats + challenges — only if signed in
@@ -128,203 +245,67 @@ export const HomePage = () => {
       .catch(() => setMyChallenges([]));
   }, [user]);
 
-  const upcoming = useMemo(() => matches.filter((m) => m.status !== 'finished').slice(0, 6), [matches]);
-  const finished = useMemo(() => matches.filter((m) => m.status === 'finished').slice(0, 6), [matches]);
-  const featured = useMemo(() => upcoming[0] || matches[0], [upcoming, matches]);
-  const topTeams = useMemo(() => teams.slice(0, 8), [teams]);
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[80vh] items-center justify-center">
-        <LoadingSpinner size="lg" label="Загружаем площадку" />
-      </div>
-    );
-  }
-
-  const accuracy = Math.round(stats?.accuracy ?? 0);
-  const totalPredictions = stats?.totalPredictions ?? 0;
+  const upcoming = matches
+    .filter((match) => match.status === 'scheduled' && Date.parse(match.date) >= Date.now())
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+  const finished = matches
+    .filter((match) => match.status === 'finished')
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  const shortlist = (upcoming.length ? upcoming : finished).slice(0, 3);
+  const topTeams = teams.filter((team) => team.hasStats !== false).slice(0, 8);
+  const challengeCards = useMemo(() => buildChallengeCards(myStats, myChallenges), [myStats, myChallenges]);
+  const today = new Date();
+  const accuracy = typeof stats?.accuracy === 'number' ? Math.round(stats.accuracy) : null;
+  const predictionCount = stats?.totalPredictions ?? 0;
 
   return (
     <>
-      {/* ============== HERO ============== */}
-      <section className="hero">
-        <div className="hero-bg" aria-hidden>
-          {HERO_FRAMES.map((src, i) => (
-            <div
-              key={i}
-              className="hero-frame"
-              style={{ backgroundImage: `url(${src})`, animationDelay: `${i * 6}s` }}
-            />
-          ))}
-          <div className="hero-scanlines" />
-        </div>
+      <div className="container-x score-home">
+        <section className="score-hero">
+          <img className="score-hero-photo" src={import.meta.env.BASE_URL + 'score-courtside-photo.webp'} alt="" width="1000" height="665" />
+          <a className="score-photo-credit"
+            href="https://www.dvidshub.net/image/624088/usa-vs-dominican-republic-exhibition-game"
+            target="_blank" rel="noreferrer">Daniel Hughes · DVIDS</a>
+          <div className="score-hero-content">
+            <time className="score-hero-date" dateTime={today.toISOString()}>
+              {today.toLocaleDateString(language, { weekday: 'long', day: 'numeric', month: 'long' })}
+            </time>
+            <h1>{t('score.title')}<br /><span>{t('score.headline')}</span></h1>
+            <p>{t('score.heroDescription')}</p>
+            <div className="score-hero-actions">
+              <Link className="btn btn-primary" to="/matches">{t('score.openMatches')} <ArrowRight size={17} aria-hidden="true" /></Link>
+              <Link className="btn btn-secondary" to={upcoming[0] ? predictionLink(upcoming[0]) : '/prediction/new'}>
+                {t('hero.ctaPredict')}
+              </Link>
+            </div>
+          </div>
+          {(accuracy !== null || predictionCount > 0) && (
+            <dl className="score-hero-metrics">
+              {accuracy !== null && <div><dt>{t('hero.statAcc')}</dt><dd>{accuracy}%</dd></div>}
+              {predictionCount > 0 && (
+                <div><dt>{t('hero.statPred')}</dt><dd>{predictionCount.toLocaleString(language)}</dd></div>
+              )}
+            </dl>
+          )}
+        </section>
 
-        <div className="container-x relative z-[2]">
-          <div className="grid items-end gap-12 lg:grid-cols-[1.4fr_1fr]">
-            <div>
-              <div
-                className="reveal-up mb-7 inline-flex items-center gap-3 font-mono text-xs uppercase text-[var(--accent)]"
-                style={{ letterSpacing: '0.2em', animationDelay: '0ms' }}
-              >
-                <span className="h-px w-14" style={{ background: 'var(--accent)' }} />
-                <span>SEASON 2025/26 · TIPOFF</span>
-              </div>
-
-              <h1
-                className="reveal-up m-0 mb-6 font-display font-black uppercase"
-                style={{
-                  fontSize: 'clamp(64px, 10vw, 160px)',
-                  lineHeight: 0.86,
-                  letterSpacing: '-0.005em',
-                  animationDelay: '120ms',
-                }}
-              >
-                <span className="stroked-text">SCORE.</span>
-                <br />
-                <span>БРОСАЙ</span>
-                <br />
-                <span style={{ color: 'var(--accent)' }}>ПРОГНОЗ</span>
-                <span style={{ color: 'var(--text-3)', margin: '0 8px', fontWeight: 100 }}>/</span>
-                <span>ЗАБИРАЙ</span>
-              </h1>
-
-              <p
-                className="reveal-up mb-8 max-w-[540px] text-[18px] leading-relaxed text-[var(--text-2)]"
-                style={{ animationDelay: '240ms' }}
-              >
-                ИИ разбирает форму, травмы, домашнюю площадку и темп. Ты бросаешь прогноз —
-                забираешь очки и поднимаешься в рейтинге. Никакого казино, только баскетбол и
-                холодная аналитика.
+        <div className="score-home-panels">
+          <LivePanel />
+          <section className="score-panel" aria-labelledby="home-schedule-heading">
+            <div className="score-panel-head">
+              <h2 id="home-schedule-heading">{t(upcoming.length || !finished.length ? 'score.upcoming' : 'score.results')}</h2>
+            </div>
+            {shortlist.length ? shortlist.map((match) => <ScoreRow key={match.id} match={match} withDate />) : (
+              <p className="score-panel-empty" role="status">
+                {loadingSchedule ? t('score.loadingSchedule') : t(scheduleFailed ? 'score.archiveUnavailable' : 'score.noUpcoming')}
               </p>
-
-              <div
-                className="reveal-up flex flex-wrap items-center gap-3.5"
-                style={{ animationDelay: '320ms' }}
-              >
-                <button
-                  onClick={() => navigate(user ? '/prediction/new' : '/auth')}
-                  className="btn btn-primary"
-                  style={{ padding: '16px 24px', fontSize: 14 }}
-                >
-                  <Trophy className="h-4 w-4" />
-                  Бросай прогноз
-                </button>
-                <button onClick={() => navigate('/matches')} className="btn btn-ghost" style={{ padding: '16px 20px' }}>
-                  <Play className="h-4 w-4" />
-                  Смотреть матчи
-                </button>
-              </div>
-
-              <div
-                className="mt-8 grid max-w-[560px] grid-cols-3 overflow-hidden rounded-lg border border-[var(--line)]"
-                style={{ gap: 1, background: 'var(--line)' }}
-              >
-                <div className="bg-[rgba(14,14,19,0.7)] px-5 py-4 backdrop-blur-md">
-                  <div className="font-display text-4xl leading-none">
-                    <span style={{ color: 'var(--accent)' }}>{accuracy || 78}</span>%
-                  </div>
-                  <div
-                    className="mt-1.5 text-[11px] uppercase text-[var(--text-3)]"
-                    style={{ letterSpacing: '0.14em' }}
-                  >
-                    Точность ИИ за сезон
-                  </div>
-                </div>
-                <div className="bg-[rgba(14,14,19,0.7)] px-5 py-4 backdrop-blur-md">
-                  <div className="font-display text-4xl leading-none tab-num">
-                    {totalPredictions.toLocaleString('ru')}
-                    <span className="text-base text-[var(--text-3)]"></span>
-                  </div>
-                  <div
-                    className="mt-1.5 text-[11px] uppercase text-[var(--text-3)]"
-                    style={{ letterSpacing: '0.14em' }}
-                  >
-                    Сделано прогнозов
-                  </div>
-                </div>
-                <div className="bg-[rgba(14,14,19,0.7)] px-5 py-4 backdrop-blur-md">
-                  <div className="font-display text-4xl leading-none">
-                    {upcoming.length}<span className="text-base text-[var(--text-3)]">/{matches.length}</span>
-                  </div>
-                  <div
-                    className="mt-1.5 text-[11px] uppercase text-[var(--text-3)]"
-                    style={{ letterSpacing: '0.14em' }}
-                  >
-                    Матчей в очереди
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Live side panel — real ESPN data with auto-refresh */}
-            <LivePanel maxRows={4} />
-          </div>
+            )}
+            <Link className="score-panel-link" to={'/matches?status=' + (finished.length && !upcoming.length ? 'finished' : 'scheduled')}>
+              {t('common.allMatches')} <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          </section>
         </div>
-      </section>
-
-      {/* ============== MARQUEE ============== */}
-      <Marquee />
-
-      {/* ============== EDITORIAL BAND — газетная полоса под маркизом ============== */}
-      <section style={{ borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', background: 'var(--bg-2)' }}>
-        <div className="container-x">
-          <div className="editorial-band">
-            <div className="eb-dateline">
-              <span className="eb-issue">ISSUE №{Math.max(1, (totalPredictions || 1) % 999)}</span>
-              <span className="eb-date">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', day: '2-digit', month: 'long' }).toUpperCase()}
-              </span>
-              <span className="eb-sep">·</span>
-              <span className="eb-loc">NBA · 2025/26</span>
-            </div>
-
-            <div className="eb-row">
-              <div className="eb-headline">
-                <span className="kicker">ON THE COURT TONIGHT</span>
-                <h3>
-                  {upcoming[0]
-                    ? `${(upcoming[0].awayTeam.abbrev || '').toUpperCase()} едут к ${(upcoming[0].homeTeam.abbrev || '').toUpperCase()}`
-                    : finished[0]
-                      ? `${(finished[0].awayTeam.abbrev || '').toUpperCase()} vs ${(finished[0].homeTeam.abbrev || '').toUpperCase()} — итог в архиве`
-                      : 'Тихий день в лиге'}
-                </h3>
-                <p>
-                  {upcoming[0]
-                    ? 'ИИ собрал прогноз — открывай матч и забирай очки до tip-off.'
-                    : 'Загляни в архив сыгранных матчей или сделай прогноз на ближайшую игру.'}
-                </p>
-                <div className="eb-cta">
-                  <button onClick={() => navigate('/matches')} className="btn btn-primary">
-                    Открыть расписание
-                  </button>
-                  <button onClick={() => navigate(user ? '/prediction/new' : '/auth')} className="btn">
-                    Бросить прогноз
-                  </button>
-                </div>
-              </div>
-
-              <div className="eb-ledger">
-                <div className="eb-ledger-row">
-                  <span className="lbl">Игр в архиве</span>
-                  <span className="val tab-num">{(stats?.totalTrainingGames || matches.length || 0).toLocaleString('ru')}</span>
-                </div>
-                <div className="eb-ledger-row">
-                  <span className="lbl">Точность модели</span>
-                  <span className="val tab-num" style={{ color: 'var(--accent)' }}>{accuracy || 78}%</span>
-                </div>
-                <div className="eb-ledger-row">
-                  <span className="lbl">Сделано прогнозов</span>
-                  <span className="val tab-num">{totalPredictions.toLocaleString('ru')}</span>
-                </div>
-                <div className="eb-ledger-row">
-                  <span className="lbl">Версия модели</span>
-                  <span className="val mono">{stats?.modelVersion || 'v1.0'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      </div>
 
       {/* ============== HIGHLIGHTS / MOMENTS ============== */}
       <HighlightsCarousel />
@@ -335,14 +316,14 @@ export const HomePage = () => {
           <div className="container-x">
             <div className="section-head">
               <div className="flex flex-col gap-3">
-                <span className="eyebrow"><span className="dot" />ROSTER · 2025/26</span>
+                <span className="eyebrow"><span className="dot" />{t('home.players.eyebrow')}</span>
                 <h2>
-                  ЛЮДИ, КОТОРЫЕ<br /><em>ДЕЛАЮТ</em> ИГРУ
+                  {t('home.players.h2a')}<br /><em>{t('home.players.h2em')}</em> {t('home.players.h2b')}
                 </h2>
               </div>
               <div className="flex flex-col items-end gap-4">
                 <p className="lead">
-                  Карточки в стиле видеоигры. Кликни — увидишь полную статистику и последние матчи.
+                  {t('home.players.lead')}
                 </p>
                 <div className="actions">
                   <button
@@ -360,7 +341,7 @@ export const HomePage = () => {
                     <ChevronRight className="h-4 w-4" />
                   </button>
                   <button onClick={() => navigate('/players')} className="btn">
-                    Все игроки <span className="arrow">→</span>
+                    {t('common.allPlayers')} <span className="arrow">→</span>
                   </button>
                 </div>
               </div>
@@ -379,61 +360,8 @@ export const HomePage = () => {
         </section>
       )}
 
-      {/* ============== FEATURED PREDICTION ============== */}
-      {featured && (
-        <section className="section">
-          <div className="container-x">
-            <div className="section-head">
-              <div className="flex flex-col gap-3">
-                <span className="eyebrow"><span className="dot" />ИГРА ВЕЧЕРА · AI BREAKDOWN</span>
-                <h2>
-                  СЕГОДНЯ ИИ<br />ЗОВЁТ <em>ШТОРМ</em>
-                </h2>
-              </div>
-              <p className="lead">
-                Модель разобрала шесть факторов и собрала разрядку для матча. Соглашайся с ИИ или иди против — система оценит обе версии.
-              </p>
-            </div>
-
-            <MatchCard match={featured} variant="featured" />
-          </div>
-        </section>
-      )}
-
-      {/* ============== UPCOMING MATCHES ============== */}
-      {(upcoming.length > 0 || finished.length > 0) && (
-        <section className="section-tight">
-          <div className="container-x">
-            <div className="section-head">
-              <div className="flex flex-col gap-3">
-                <span className="eyebrow"><span className="dot" />СЛЕДУЮЩИЕ 48 ЧАСОВ</span>
-                <h2>
-                  БРОСАЙ ПРОГНОЗ<br /><em>В ДВА КЛИКА</em>
-                </h2>
-              </div>
-              <div className="flex flex-col items-end gap-4">
-                <p className="lead">Выбирай команду — ИИ покажет шансы и причины. Чем раньше прогноз, тем больше очков.</p>
-                <div className="actions">
-                  <button onClick={() => navigate('/matches')} className="btn btn-ghost">
-                    Все матчи
-                  </button>
-                  <button onClick={() => navigate('/matches')} className="btn">
-                    Расписание <span className="arrow">→</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {(upcoming.length ? upcoming : finished).slice(0, 6).map((m) => (
-                <MatchCard key={m.id} match={m} />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* ============== STANDINGS + LEADERBOARD ============== */}
+      {topTeams.length > 0 && (
       <section className="section-tight">
         <div className="container-x">
           <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -442,14 +370,14 @@ export const HomePage = () => {
                 className="m-0 mb-5 font-display text-2xl uppercase"
                 style={{ letterSpacing: '0.01em' }}
               >
-                Турнирная таблица
+                {t('home.standings.title')}
               </h3>
               <div className="overflow-x-auto">
                 <table className="standings-table">
                   <thead>
                     <tr>
                       <th style={{ width: 24 }}>#</th>
-                      <th>Команда</th>
+                      <th>{t('home.standings.team')}</th>
                       <th>W</th>
                       <th>L</th>
                       <th>%</th>
@@ -495,8 +423,8 @@ export const HomePage = () => {
             <div className="flex flex-col gap-6">
               <div className="card p-6">
                 <h3 className="m-0 mb-4 flex items-center justify-between font-display text-2xl uppercase">
-                  <span>🏆 Лидеры лиги</span>
-                  <span className="tag tag-gold">WIN %</span>
+                  <span>{t('home.leaders.title')}</span>
+                  <span className="tag tag-gold">{t('home.leaders.winpct')}</span>
                 </h3>
                 {topTeams.slice(0, 5).map((t, i) => {
                   const total = t.wins + t.losses;
@@ -521,23 +449,167 @@ export const HomePage = () => {
                   onClick={() => navigate('/teams')}
                   className="btn mt-4 w-full justify-center"
                 >
-                  Все команды <span className="arrow">→</span>
+                  {t('common.allTeams')} <span className="arrow">→</span>
                 </button>
               </div>
             </div>
           </div>
         </div>
       </section>
+      )}
 
       {/* ============== CABINET (preview — only for signed-in users) ============== */}
       {user && (
+        <section className="section-tight">
+          <div className="container-x">
+            <div className="section-head">
+              <div className="flex flex-col gap-3">
+                <span className="eyebrow"><span className="dot" />{t('home.account.eyebrow')}</span>
+                <h2>
+                  {t('home.account.h2a')}<br />{t('home.account.h2b')}
+                </h2>
+              </div>
+              <p className="lead">
+                {t('home.account.leadBefore')} <Link to="/history" className="underline" style={{ color: 'var(--accent)' }}>{t('home.account.history')}</Link>.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] lg:grid-cols-[0.95fr_1.05fr]">
+              <div
+                className="p-8"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 80% 60% at 20% 0%, var(--accent-soft), transparent 60%), var(--surface)',
+                }}
+              >
+                <div className="mb-6 flex items-center justify-between gap-4">
+                  <h4 className="m-0 font-mono text-[11px] uppercase text-[var(--text-3)]" style={{ letterSpacing: '0.2em' }}>
+                    {t('home.account.accuracy')}
+                  </h4>
+                  <span className="tag tag-gold">SCORE INDEX</span>
+                </div>
+                <div className="mb-2.5 flex items-end gap-4">
+                  <div className="font-display text-7xl leading-[0.9]">
+                    <span style={{ color: 'var(--accent)' }}>{Math.round(myStats?.accuracy ?? 0)}</span>
+                    <span className="text-3xl text-[var(--text-3)]">%</span>
+                  </div>
+                  <div className="mb-2 h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${clampProgress(myStats?.accuracy ?? 0)}%`,
+                        background: 'linear-gradient(90deg, var(--accent), var(--ok))',
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="mb-7 max-w-[420px] text-sm text-[var(--text-3)]">
+                  {(myStats?.completedPredictions ?? 0) > 0
+                    ? `${myStats.correctPredictions}/${myStats.completedPredictions} ${t('home.account.accuracyReady')}`
+                    : t('home.account.accuracyEmpty')}
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { num: String(myStats?.totalPredictions ?? 0), lbl: t('home.account.total'), diff: `${myStats?.completedPredictions ?? 0} ${t('home.account.completed')}` },
+                    { num: String(myStats?.currentStreak ?? 0), lbl: t('home.account.streak'), diff: `${t('home.account.record')}: ${myStats?.bestStreak ?? 0}` },
+                    { num: myStats?.rank ? `#${myStats.rank}` : '-', lbl: t('home.account.rank'), diff: t('home.account.rankSub') },
+                    { num: (myStats?.totalXp ?? 0).toLocaleString('ru'), lbl: t('home.account.points'), diff: t('home.account.pointsSub') },
+                  ].map((s) => (
+                    <div key={s.lbl} className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-4">
+                      <div className="font-display text-3xl leading-none tab-num">{s.num}</div>
+                      <div className="mt-1 font-mono text-[10px] uppercase text-[var(--text-3)]" style={{ letterSpacing: '0.14em' }}>{s.lbl}</div>
+                      <div className="mt-1.5 font-mono text-[11px]" style={{ color: 'var(--ok)' }}>{s.diff}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-[var(--line)] bg-[var(--bg-2)] p-8 lg:border-l lg:border-t-0">
+                <div className="grid gap-5 md:grid-cols-[1fr_0.85fr]">
+                  <div>
+                    <h4 className="m-0 mb-3.5 font-mono text-[11px] uppercase text-[var(--text-3)]" style={{ letterSpacing: '0.2em' }}>
+                      {t('home.account.recent')} {myStats?.lastOutcomes?.length || 0} {t('home.account.predictions')}
+                    </h4>
+                    {(myStats?.lastOutcomes?.length ?? 0) === 0 ? (
+                      <div className="mb-7 rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-5 text-[13px] text-[var(--text-3)]">
+                        {t('home.account.emptySpark')}
+                      </div>
+                    ) : (
+                      <div className="spark mb-7">
+                        {(myStats?.lastOutcomes || []).map((g: string, i: number) => (
+                          <div
+                            key={i}
+                            className={`bar ${g === 'W' ? 'win' : ''}`}
+                            style={{ height: g === 'W' ? `${50 + (i % 5) * 10}%` : g === 'L' ? `${20 + (i % 3) * 10}%` : '12%', opacity: g === '?' ? 0.35 : 1 }}
+                            title={g === 'W' ? t('home.account.win') : g === 'L' ? t('home.account.loss') : t('home.account.pending')}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    <h4 className="m-0 mb-3.5 font-mono text-[11px] uppercase text-[var(--text-3)]" style={{ letterSpacing: '0.2em' }}>
+                      {t('home.account.weak')}
+                    </h4>
+                    <div className="flex flex-col gap-2.5">
+                      {(() => {
+                        const cats = myStats?.categories;
+                        const rows: Array<{ l: string; v: string; color: string }> = [];
+                        if (cats) {
+                          if (cats.underdog?.pct !== null && cats.underdog?.pct !== undefined) rows.push({ l: t('home.account.underdogs'), v: `${cats.underdog.pct}% · ${cats.underdog.correct}/${cats.underdog.n}`, color: cats.underdog.pct >= 50 ? 'var(--ok)' : 'var(--danger)' });
+                          if (cats.favourite?.pct !== null && cats.favourite?.pct !== undefined) rows.push({ l: t('home.account.favorites'), v: `${cats.favourite.pct}% · ${cats.favourite.correct}/${cats.favourite.n}`, color: cats.favourite.pct >= 60 ? 'var(--ok)' : 'var(--gold)' });
+                          if (cats.highConfidence?.pct !== null && cats.highConfidence?.pct !== undefined) rows.push({ l: t('home.account.highConfidence'), v: `${cats.highConfidence.pct}% · ${cats.highConfidence.correct}/${cats.highConfidence.n}`, color: cats.highConfidence.pct >= 65 ? 'var(--ok)' : 'var(--gold)' });
+                        }
+                        if (rows.length === 0) {
+                          return <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-3.5 text-[13px] text-[var(--text-3)]">{t('home.account.emptyWeak')}</div>;
+                        }
+                        return rows.map((r) => (
+                          <div key={r.l} className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-3.5">
+                            <span className="text-[13px]">{r.l}</span>
+                            <span className="font-mono text-xs" style={{ color: r.color }}>{r.v}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="badge-icon" style={{ color: 'var(--ai)' }}>
+                        <Target className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="font-display text-xl uppercase">{t('account.commandCenter')}</div>
+                        <div className="text-xs text-[var(--text-3)]">{t('account.commandText')}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-2.5">
+                      {[t('account.mission1'), t('account.mission2'), t('account.mission3')].map((mission, index) => (
+                        <div key={mission} className="flex items-center gap-3 rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5">
+                          <span className="font-mono text-[10px] text-[var(--gold)]">0{index + 1}</span>
+                          <span className="text-[13px] text-[var(--text-2)]">{mission}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => navigate('/account')} className="btn btn-primary mt-5 w-full justify-center">
+                      {t('nav.account')} <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {false && user && (
       <section className="section-tight">
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
               <span className="eyebrow"><span className="dot" />ЛИЧНЫЙ КАБИНЕТ</span>
               <h2>
-                ТВОЯ <em>СТАТА</em><br />ЗА СЕЗОН
+                Твоя статистика<br />за сезон
               </h2>
             </div>
             <p className="lead">
@@ -550,7 +622,7 @@ export const HomePage = () => {
               className="p-8"
               style={{
                 background:
-                  'radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255,90,31,0.18), transparent 60%), var(--surface)',
+                  'radial-gradient(ellipse 80% 60% at 20% 0%, var(--accent-soft), transparent 60%), var(--surface)',
               }}
             >
               <h4
@@ -578,18 +650,18 @@ export const HomePage = () => {
                   },
                   {
                     num: String(myStats?.currentStreak ?? 0),
-                    lbl: 'Текущий стрик',
+                    lbl: 'Текущая серия',
                     diff: `Рекорд: ${myStats?.bestStreak ?? 0}`,
                   },
                   {
                     num: myStats?.rank ? `#${myStats.rank}` : '—',
                     lbl: 'Место в рейтинге',
-                    diff: 'по XP среди игроков',
+                    diff: 'по качеству прогнозов',
                   },
                   {
                     num: (myStats?.totalXp ?? 0).toLocaleString('ru'),
-                    lbl: 'XP всего',
-                    diff: '50 за верный + бонусы',
+                    lbl: 'Баллы профиля',
+                    diff: 'за верные прогнозы',
                   },
                 ].map((s) => (
                   <div key={s.lbl} className="rounded-md border border-[var(--line)] bg-[var(--surface-2)] p-4">
@@ -701,34 +773,30 @@ export const HomePage = () => {
       </section>
       )}
 
-      {/* ============== CHALLENGES (demo — only for signed-in users) ============== */}
+      {/* ============== CHALLENGES (real user progress) ============== */}
       {user && (
       <section className="section-tight">
         <div className="container-x">
           <div className="section-head">
             <div className="flex flex-col gap-3">
-              <span className="eyebrow"><span className="dot" />ЧЕЛЛЕНДЖИ И БЕЙДЖИ</span>
+                <span className="eyebrow"><span className="dot" />{t('home.pass.eyebrow')}</span>
               <h2>
-                СОБИРАЙ <em>ОЧКИ</em>,<br />ПОДНИМАЙ ЛИГУ
+                {t('home.pass.h2a')} <em>{t('home.pass.h2em')}</em>,<br />{t('home.pass.h2b')}
               </h2>
             </div>
             <p className="lead">
-              Стрики, аналитика, ставки на андердогов — каждое действие приносит XP и шанс получить редкий бейдж.
+              {t('home.pass.lead')}
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {(myChallenges.length > 0 ? myChallenges : CHALLENGES).map((c) => (
+            {challengeCards.map((c) => (
               <article key={c.id} className={`challenge-card ${c.locked ? 'opacity-60' : ''}`}>
                 <div
                   className="badge-icon"
-                  style={{ background: `linear-gradient(135deg, ${c.color}, ${c.color}88)` }}
+                  style={{ color: c.color }}
                 >
-                  <span>{c.icon}</span>
-                  <div
-                    className="absolute -inset-2 -z-10 rounded-3xl opacity-25"
-                    style={{ background: c.color, filter: 'blur(14px)' }}
-                  />
+                  <ChallengeIcon icon={c.icon} />
                 </div>
                 <div className="font-display text-xl uppercase">{c.title}</div>
                 <div className="mt-2 mb-4 min-h-[34px] text-xs leading-[1.4] text-[var(--text-3)]">
@@ -757,18 +825,18 @@ export const HomePage = () => {
           <div className="container-x">
             <div className="section-head">
               <div className="flex flex-col gap-3">
-                <span className="eyebrow"><span className="dot" />ЛЕНТА · ESPN NEWS</span>
+                <span className="eyebrow"><span className="dot" />{t('home.news.eyebrow')}</span>
                 <h2>
-                  ЧТО ЧИТАТЬ<br /><em>ПЕРЕД</em> ПРОГНОЗОМ
+                  {t('home.news.h2a')}<br /><em>{t('home.news.h2em')}</em> {t('home.news.h2b')}
                 </h2>
               </div>
               <div className="flex flex-col items-end gap-4">
                 <p className="lead">
-                  Свежие заголовки прямо из ESPN. Аналитика, травмы, разборы — обновляется автоматически.
+                  {t('home.news.lead')}
                 </p>
                 <div className="actions">
                   <button onClick={() => navigate('/news')} className="btn">
-                    Вся лента <span className="arrow">→</span>
+                    {t('home.news.all')} <span className="arrow">→</span>
                   </button>
                 </div>
               </div>
@@ -799,7 +867,7 @@ export const HomePage = () => {
             {/* Footer CTA */}
             <div className="mt-10 flex justify-center">
               <button onClick={() => navigate('/news')} className="btn btn-primary">
-                Открыть всю ленту <span className="arrow">→</span>
+                {t('home.news.openAll')} <span className="arrow">→</span>
               </button>
             </div>
           </div>
@@ -816,14 +884,14 @@ export const HomePage = () => {
       {!user && (
         <section className="section-tight">
           <div className="container-x">
-            <div className="card p-10 text-center" style={{ background: 'linear-gradient(135deg, rgba(255,90,31,0.10), transparent), var(--surface)' }}>
+            <div className="card p-10 text-center" style={{ background: 'linear-gradient(135deg, var(--accent-soft), transparent), var(--surface)' }}>
               <Lock className="mx-auto h-7 w-7" style={{ color: 'var(--accent)' }} />
-              <h3 className="mt-4 font-display text-4xl uppercase">Готов попасть в рейтинг?</h3>
+              <h3 className="mt-4 font-display text-4xl uppercase">{t('home.cta.title')}</h3>
               <p className="mx-auto mt-3 max-w-[460px] text-sm text-[var(--text-3)]">
-                Зарегистрируйся за минуту — сохраняй прогнозы, копи XP, прокачивай лигу.
+                {t('home.cta.desc')}
               </p>
-              <button onClick={() => navigate('/auth')} className="btn btn-primary mt-6">
-                Войти / Зарегистрироваться <ArrowRight className="h-4 w-4" />
+              <button onClick={() => navigate('/prediction/new')} className="btn btn-primary mt-6">
+                {t('home.cta.button')} <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </div>

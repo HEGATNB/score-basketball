@@ -18,8 +18,8 @@ async def get_all_players(
     season: Optional[str] = Query(None, description="Filter by season"),
     search: Optional[str] = Query(None, description="Search by player name"),
     min_games: int = Query(0, ge=0, description="Minimum games played"),
-    sort_by: str = Query("pts", regex="^(pts|reb|ast|player_name|gp|season)$"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    sort_by: str = Query("pts", pattern="^(pts|reb|ast|player_name|gp|season)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db)
@@ -48,7 +48,7 @@ async def get_all_players(
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting players: {str(e)}"
+            detail="Error getting players"
         )
 
 # Роут для получения сезонов
@@ -87,7 +87,7 @@ async def get_top_players(
         logger.error(f"Error in get_top_players: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting top players: {str(e)}"
+            detail="Error getting top players"
         )
 
 # Получение игрока по id
@@ -117,7 +117,7 @@ async def get_player_by_id(
         logger.error(f"Error in get_player_by_id: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting player: {str(e)}"
+            detail="Error getting player"
         )
 
 # Карьерная разбивка по сезонам — для PlayerDetailModal на фронте
@@ -164,5 +164,5 @@ async def get_players_by_team(
         logger.error(f"Error in get_players_by_team: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error getting players by team: {str(e)}"
+            detail="Error getting players by team"
         )

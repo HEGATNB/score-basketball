@@ -1,24 +1,18 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from contextlib import closing
+from functools import lru_cache
 import time
 import sys
-import io
-import requests
-import os
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config import config
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+from services.espn_provider import ESPNProvider, FeedUnavailable
 
-DB_NAME = config.DB_NAME
-DB_USER = config.DB_USER
-DB_PASSWORD = config.DB_PASSWORD
-DB_HOST = config.DB_HOST
-DB_PORT = config.DB_PORT
+provider = ESPNProvider(retries=2)
 
 # Расширенный маппинг названий команд из ESPN в аббревиатуры БД
 TEAM_NAME_MAP = {
@@ -102,15 +96,8 @@ SPECIAL_GAME_KEYWORDS = ['Team', 'World', 'USA', 'All-Star', 'All Star', 'Rising
 
 
 def get_db_connection():
-    conn = psycopg2.connect(
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-        cursor_factory=RealDictCursor
-    )
-    return conn
+    return psycopg2.connect(config.DATABASE_URL, cursor_factory=RealDictCursor, connect_timeout=5)
+
 
 # Найти аббривеатуру
 def find_team_abbrev(team_name: str) -> str:
@@ -141,6 +128,7 @@ def find_team_abbrev(team_name: str) -> str:
 
 def get_team_id_map(conn):
     #Создание словаря {team_abbreviation: team_id} из таблицы game""".
+    cursor = conn.cursor()
     cursor.execute("""
         SELECT DISTINCT team_abbreviation_home as abbrev, team_id_home as team_id 
         FROM game 
@@ -158,6 +146,38 @@ def get_team_id_map(conn):
     return team_map
 
 
+def get_update_window_days(conn, minimum_days=2, max_days=120):
+    """Возвращает окно догрузки от последней даты в game до текущего дня."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT MAX(game_date) AS last_game_date
+            FROM game
+            WHERE game_date IS NOT NULL
+        """)
+        row = cursor.fetchone()
+        raw_last_date = row.get('last_game_date') if row else None
+        if not raw_last_date:
+            return minimum_days
+
+        if isinstance(raw_last_date, datetime):
+            last_date = raw_last_date.date()
+        else:
+            raw_text = str(raw_last_date).strip()
+            try:
+                last_date = datetime.fromisoformat(raw_text.replace('Z', '+00:00')).date()
+            except ValueError:
+                last_date = datetime.strptime(raw_text[:19], "%Y-%m-%d %H:%M:%S").date()
+
+        gap_days = (datetime.now(timezone.utc).date() - last_date).days + 1
+        return max(minimum_days, min(gap_days, max_days))
+    except Exception as e:
+        print(f"Could not calculate update window, fallback to {minimum_days} days: {e}")
+        return minimum_days
+    finally:
+        cursor.close()
+
+
 def is_special_game(away_name, home_name):
     combined = f"{away_name} {home_name}".lower()
     for keyword in SPECIAL_GAME_KEYWORDS:
@@ -167,58 +187,80 @@ def is_special_game(away_name, home_name):
 
 
 def fetch_espn_games(date):
-    """Получение списка игр с ESPN API"""
-    date_str = date.strftime("%Y%m%d")
-    url = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-    params = {"dates": date_str, "limit": 100}
-
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        if response.status_code != 200:
-            print(f"ESPN API error: {response.status_code}")
-            return []
-        data = response.json()
-        events = data.get('events', [])
-        print(f"Fetched {len(events)} events from ESPN for {date}")
-        return events
-    except Exception as e:
-        print(f"Error fetching ESPN: {e}")
-        return []
+    return provider.scoreboard(date.strftime("%Y%m%d"))
 
 
 def fetch_detailed_stats(game_id):
-    """Получение детальной статистики игры"""
-    url = f"http://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
-    params = {"event": game_id}
+    """Read ESPN team totals, including the displayValue fields used by box scores."""
+    data = provider.summary(game_id)
+    teams = (data.get("boxscore") or {}).get("teams") or []
+    result = {}
+    shooting = {
+        "fieldGoalsMade-fieldGoalsAttempted": ("fieldGoalsMade", "fieldGoalsAttempted"),
+        "threePointFieldGoalsMade-threePointFieldGoalsAttempted": (
+            "threePointFieldGoalsMade", "threePointFieldGoalsAttempted",
+        ),
+        "freeThrowsMade-freeThrowsAttempted": ("freeThrowsMade", "freeThrowsAttempted"),
+    }
+    for team in teams:
+        side = team.get("homeAway")
+        if side not in {"home", "away"}:
+            continue
+        totals = {}
+        for stat in team.get("statistics") or []:
+            name = stat.get("name")
+            displayed = str(stat.get("displayValue", ""))
+            if name in shooting:
+                values = displayed.split("-")
+                if len(values) == 2 and all(value.isdecimal() for value in values):
+                    totals.update(zip(shooting[name], map(int, values)))
+            elif name and displayed.isdecimal():
+                totals[name] = int(displayed)
+            totals.update({
+                key: value for key, value in stat.items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            })
+        for key, alias in (
+            ("rebounds", "totalRebounds"),
+            ("turnovers", "totalTurnovers"),
+            ("fouls", "personalFouls"),
+        ):
+            if key not in totals and alias in totals:
+                totals[key] = totals[alias]
+        result[side] = totals
+    required = {
+        "fieldGoalsMade", "fieldGoalsAttempted", "threePointFieldGoalsMade",
+        "threePointFieldGoalsAttempted", "freeThrowsMade", "freeThrowsAttempted",
+        "rebounds", "assists", "steals", "blocks", "turnovers", "fouls",
+    }
+    if not all(required <= result.get(side, {}).keys() for side in ("home", "away")):
+        raise FeedUnavailable("Incomplete team box score")
+    return result
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code != 200:
-            return None
 
-        data = response.json()
-        boxscore = data.get('boxscore', {})
-        teams = boxscore.get('teams', [])
-
-        result = {'home': {}, 'away': {}}
-        for team in teams:
-            team_stats = team.get('statistics', [])
-            is_home = team.get('homeAway') == 'home'
-            target = result['home'] if is_home else result['away']
-            for stat in team_stats:
-                for key, value in stat.items():
-                    if isinstance(value, (int, float)) and key != 'label':
-                        target[key] = value
-        return result
-    except Exception as e:
+def final_scores(event, home, away):
+    state = (event.get("status") or {}).get("type") or {}
+    if state.get("completed") is not True:
         return None
+    scores = [str(team.get("score", "")) for team in (home, away)]
+    if not all(value.isascii() and value.isdecimal() for value in scores):
+        raise FeedUnavailable("Invalid final score")
+    home_score, away_score = map(int, scores)
+    if min(home_score, away_score) <= 0 or max(home_score, away_score) > 300 or home_score == away_score:
+        raise FeedUnavailable("Invalid final score")
+    return home_score, away_score
 
 
 def parse_espn_game(event, team_id_map):
     """Парсит данные с API и приводит их к структуре как в базе"""
     try:
-        game_id = event['id']
-        game_date = datetime.strptime(event['date'], "%Y-%m-%dT%H:%MZ")
+        game_id = str(event["id"])
+        if not game_id.isascii() or not game_id.isdecimal():
+            return None
+        game_date = datetime.fromisoformat(event["date"].replace("Z", "+00:00"))
+        if game_date.tzinfo is None:
+            return None
+        game_date = game_date.astimezone(timezone.utc)
 
         competitions = event.get('competitions', [{}])[0]
         competitors = competitions.get('competitors', [])
@@ -231,7 +273,7 @@ def parse_espn_game(event, team_id_map):
         for comp in competitors:
             if comp.get('homeAway') == 'home':
                 home_competitor = comp
-            else:
+            elif comp.get('homeAway') == 'away':
                 away_competitor = comp
 
         if not home_competitor or not away_competitor:
@@ -264,13 +306,11 @@ def parse_espn_game(event, team_id_map):
             print(f"Team ID not found: {away_abbrev}={away_id}, {home_abbrev}={home_id}")
             return None
 
-        away_score = int(away_competitor.get('score', 0) or 0)
-        home_score = int(home_competitor.get('score', 0) or 0)
+        scores = final_scores(event, home_competitor, away_competitor)
+        home_score, away_score = scores or (0, 0)
         home_win = home_score > away_score
-
-        detailed_stats = fetch_detailed_stats(game_id)
-        home_stats = detailed_stats.get('home', {}) if detailed_stats else {}
-        away_stats = detailed_stats.get('away', {}) if detailed_stats else {}
+        detailed_stats = fetch_detailed_stats(game_id) if scores else {"home": {}, "away": {}}
+        home_stats, away_stats = detailed_stats["home"], detailed_stats["away"]
 
         def safe_pct(made, att):
             return round(made / att, 3) if att and att > 0 else 0
@@ -338,7 +378,9 @@ def parse_espn_game(event, team_id_map):
             'video_available_home': 0,
             'video_available_away': 0
         }
-    except Exception as e:
+    except FeedUnavailable:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError, IndexError) as e:
         print(f"Error parsing game: {e}")
         return None
 
@@ -352,9 +394,9 @@ def game_exists(conn, game_id):
 
 
 def insert_game(conn, game):
-    cursor = conn.cursor()
-    if game_exists(conn, game['game_id']):
+    if game_exists(conn, game["game_id"]):
         return False
+    cursor = conn.cursor()
 
     columns = ', '.join(game.keys())
     placeholders = ', '.join(['%s'] * len(game))
@@ -367,19 +409,19 @@ def insert_game(conn, game):
     except Exception as e:
         print(f" Error inserting game: {e}")
         conn.rollback()
-        return False
+        raise
     finally:
         cursor.close()
 
 # Обновляет результаты существующих матчей за последние дни
-def update_existing_games(conn, days_back=2):
+def update_existing_games(conn, days_back=2, get_games=fetch_espn_games):
     print(f"\n{'=' * 60}")
     print(" UPDATING EXISTING GAMES")
     print(f"Checking games from last {days_back} days")
     print(f"{'=' * 60}")
 
     cursor = conn.cursor()
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     updated_count = 0
 
     for i in range(days_back):
@@ -402,7 +444,7 @@ def update_existing_games(conn, days_back=2):
 
         print(f"Found {len(pending_games)} pending games")
 
-        events = fetch_espn_games(date)
+        events = get_games(date)
         if not events:
             print(f"Could not fetch ESPN data")
             continue
@@ -413,15 +455,22 @@ def update_existing_games(conn, days_back=2):
                 competitions = event.get('competitions', [{}])[0]
                 competitors = competitions.get('competitors', [])
                 if len(competitors) >= 2:
-                    away_name = competitors[0].get('team', {}).get('displayName', '')
-                    home_name = competitors[1].get('team', {}).get('displayName', '')
-                    espn_games[f"{home_name}_{away_name}"] = event
+                    home_name = ''
+                    away_name = ''
+                    for competitor in competitors:
+                        team_name = competitor.get('team', {}).get('displayName', '')
+                        if competitor.get('homeAway') == 'home':
+                            home_name = team_name
+                        else:
+                            away_name = team_name
+                    if home_name and away_name:
+                        espn_games[f"{home_name}_{away_name}"] = event
                     espn_games[event.get('id')] = event
             except Exception:
                 continue
 
         for game in pending_games:
-            game_data = dict(game._mapping)
+            game_data = dict(game)
             home_name = game_data.get("team_name_home")
             away_name = game_data.get("team_name_away")
             game_id = game_data.get("game_id")
@@ -434,27 +483,19 @@ def update_existing_games(conn, days_back=2):
             if not espn_game:
                 continue
 
-            detailed_stats = fetch_detailed_stats(espn_game.get('id'))
-            if not detailed_stats:
+            competitions = (espn_game.get("competitions") or [{}])[0]
+            competitors = competitions.get("competitors") or []
+            teams = {item.get("homeAway"): item for item in competitors}
+            if "home" not in teams or "away" not in teams:
+                continue
+            scores = final_scores(espn_game, teams["home"], teams["away"])
+            if scores is None:
                 continue
 
-            competitions = espn_game.get('competitions', [{}])[0]
-            competitors = competitions.get('competitors', [])
-            home_score = 0
-            away_score = 0
-
-            for comp in competitors:
-                if comp.get('homeAway') == 'home':
-                    home_score = int(comp.get('score', 0) or 0)
-                else:
-                    away_score = int(comp.get('score', 0) or 0)
-
-            if home_score == 0 and away_score == 0:
-                continue
-
+            home_score, away_score = scores
             home_win = home_score > away_score
-            home_stats = detailed_stats.get('home', {})
-            away_stats = detailed_stats.get('away', {})
+            detailed_stats = fetch_detailed_stats(espn_game["id"])
+            home_stats, away_stats = detailed_stats["home"], detailed_stats["away"]
 
             def safe_pct(made, att):
                 return round(made / att, 3) if att and att > 0 else 0
@@ -475,8 +516,7 @@ def update_existing_games(conn, days_back=2):
                         ftm_away = %s, fta_away = %s, ft_pct_away = %s,
                         oreb_away = %s, dreb_away = %s, reb_away = %s,
                         ast_away = %s, stl_away = %s, blk_away = %s,
-                        tov_away = %s, pf_away = %s,
-                        updated_at = CURRENT_TIMESTAMP
+                        tov_away = %s, pf_away = %s
                     WHERE game_id = %s
                 """, (
                     home_score, away_score,
@@ -509,27 +549,36 @@ def update_existing_games(conn, days_back=2):
                 if cursor.rowcount > 0:
                     updated_count += 1
                     print(f" Updated: {home_name} {home_score} - {away_score} {away_name}")
-            except Exception as e:
-                print(f"Update error: {e}")
+            except Exception:
+                conn.rollback()
+                raise
 
         conn.commit()
 
+    cursor.close()
     print(f"\n UPDATE STATS: {updated_count} games updated")
     return updated_count
 
 # Обновляет данные для scheduled матчей и добавляет новые матчи"""
 def update_db_with_new_games(db_path=None, days_back=2):
+    with closing(get_db_connection()) as conn:
+        return import_games(conn, days_back)
+
+
+def import_games(conn, days_back):
+    days_back = get_update_window_days(conn, minimum_days=days_back)
+
     print(f"\n{'=' * 60}")
     print(f"DATABASE UPDATE")
     print(f"Last {days_back} days")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
-    conn = get_db_connection()
     print(f"Connected to database")
 
     # Обновляем результаты существующих матчей
-    updated_results = update_existing_games(conn, days_back)
+    get_games = lru_cache(maxsize=120)(fetch_espn_games)
+    updated_results = update_existing_games(conn, days_back, get_games)
 
     # Добавляем новые матчи
     print(f"\n{'=' * 60}")
@@ -537,7 +586,7 @@ def update_db_with_new_games(db_path=None, days_back=2):
     print(f"{'=' * 60}")
 
     team_id_map = get_team_id_map(conn)
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     new_count = 0
     failed_count = 0
     skipped_count = 0
@@ -545,9 +594,12 @@ def update_db_with_new_games(db_path=None, days_back=2):
     for i in range(days_back):
         date = today - timedelta(days=i)
         print(f"\n Processing {date}")
-        events = fetch_espn_games(date)
+        events = get_games(date)
 
         for event in events:
+            if event.get("id") and game_exists(conn, "ESPN_" + str(event["id"])):
+                skipped_count += 1
+                continue
             game_record = parse_espn_game(event, team_id_map)
             if game_record is None:
                 failed_count += 1
@@ -560,8 +612,6 @@ def update_db_with_new_games(db_path=None, days_back=2):
 
         if i < days_back - 1:
             time.sleep(1)
-
-    conn.close()
 
     print(f"\n{'=' * 60}")
     print(f"FINAL STATISTICS:")

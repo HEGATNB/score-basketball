@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Match } from '@/shared/api/client';
-import { liveApi, type LiveEvent, type LiveMatchDetails } from '@/shared/api/live';
+import { liveApi, type LiveMatchDetails } from '@/shared/api/live';
 import { TeamLogo } from './TeamLogo';
 
 interface MatchLiveStatsProps {
@@ -30,7 +30,6 @@ function toEspnDate(iso: string, offsetDays = 0): string | null {
  */
 export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
   const [details, setDetails] = useState<LiveMatchDetails | null>(null);
-  const [event, setEvent] = useState<LiveEvent | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'found' | 'not-found' | 'error'>(
     'loading',
   );
@@ -38,9 +37,12 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
+      setStatus('loading');
+      setDetails(null);
+      const espnId = match.gameId?.match(/^ESPN_(\d+)$/)?.[1];
       const homeAbbrev = match.homeTeam?.abbrev?.toUpperCase();
       const awayAbbrev = match.awayTeam?.abbrev?.toUpperCase();
-      if (!homeAbbrev || !awayAbbrev || !match.date) {
+      if (!espnId && (!homeAbbrev || !awayAbbrev || !match.date)) {
         setStatus('not-found');
         return;
       }
@@ -49,6 +51,14 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
       // our DB (UTC ISO) and the ESPN scoreboard's "game day".
       const offsets = [0, -1, 1];
       try {
+        if (espnId) {
+          const det = await liveApi.matchDetails(espnId);
+          if (!cancelled) {
+            setDetails(det);
+            setStatus('found');
+          }
+          return;
+        }
         for (const offset of offsets) {
           if (cancelled) return;
           const date = toEspnDate(match.date, offset);
@@ -64,7 +74,6 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
                 e.away.abbrev?.toUpperCase() === homeAbbrev),
           );
           if (wanted) {
-            setEvent(wanted);
             const det = await liveApi.matchDetails(wanted.id);
             if (cancelled) return;
             setDetails(det);
@@ -81,7 +90,7 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
     return () => {
       cancelled = true;
     };
-  }, [match.date, match.homeTeam?.abbrev, match.awayTeam?.abbrev]);
+  }, [match.gameId, match.date, match.homeTeam?.abbrev, match.awayTeam?.abbrev]);
 
   if (status === 'loading') {
     return (
@@ -90,8 +99,11 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
       </div>
     );
   }
-  if (status !== 'found' || !details || !event) return null;
+  if (status !== 'found' || !details) return null;
+  return <MatchBoxScore details={details} />;
+};
 
+export function MatchBoxScore({ details }: { details: LiveMatchDetails }) {
   const home = details.teams.find((t) => t.homeAway === 'home');
   const away = details.teams.find((t) => t.homeAway === 'away');
   const homeStats = details.teamStats.find((t) => t.abbrev === home?.abbrev);
@@ -277,6 +289,6 @@ export const MatchLiveStats = ({ match }: MatchLiveStatsProps) => {
       )}
     </div>
   );
-};
+}
 
 export default MatchLiveStats;

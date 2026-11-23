@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, ExternalLink, Calendar, User2, Tag, ChevronRight } from 'lucide-react';
 import { liveApi, type LiveArticle, type LiveNewsItem } from '@/shared/api/live';
 
@@ -32,6 +32,15 @@ export const NewsModal = ({ article, onClose, onOpen }: NewsModalProps) => {
   const [full, setFull] = useState<LiveArticle | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const articleId = article?.id;
+
+  useEffect(() => {
+    if (!articleId) return;
+    const opener = document.activeElement;
+    dialogRef.current?.focus();
+    return () => { if (opener instanceof HTMLElement) opener.focus(); };
+  }, [articleId]);
 
   // Lazy-fetch the full article body when modal opens
   useEffect(() => {
@@ -93,6 +102,11 @@ export const NewsModal = ({ article, onClose, onOpen }: NewsModalProps) => {
     >
       <article
         className="news-modal"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={article.title}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Hero */}

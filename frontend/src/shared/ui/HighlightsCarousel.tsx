@@ -402,7 +402,7 @@ export const HighlightsCarousel = () => {
         </div>
       </div>
 
-      {opened && <PlayerModal clip={opened} onClose={() => setOpened(null)} />}
+      {opened && <PlayerModal key={opened.id} clip={opened} onClose={() => setOpened(null)} />}
     </section>
   );
 };
@@ -561,6 +561,8 @@ function ThumbCard({
 /* ============================== Modal Player ============================== */
 
 function PlayerModal({ clip, onClose }: { clip: LiveHighlight; onClose: () => void }) {
+  const [videoFailed, setVideoFailed] = useState(false);
+  const canPlay = /^https:\/\//i.test(clip.url) && /\.mp4(?:[?#]|$)/i.test(clip.url);
   const meta = classifyClip(clip.title);
   return (
     <div
@@ -574,14 +576,13 @@ function PlayerModal({ clip, onClose }: { clip: LiveHighlight; onClose: () => vo
         </button>
 
         <div className="hc-player-stage">
-          {clip.youtubeId ? (
-            <iframe
-              key={clip.youtubeId}
-              src={`https://www.youtube.com/embed/${clip.youtubeId}?autoplay=1&modestbranding=1&rel=0&playsinline=1&color=white`}
-              title={clip.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-              allowFullScreen
-              referrerPolicy="strict-origin-when-cross-origin"
+          {canPlay && !videoFailed ? (
+            <video
+              src={clip.url}
+              controls
+              autoPlay
+              playsInline
+              onError={() => setVideoFailed(true)}
               className="hc-player-iframe"
             />
           ) : (
@@ -597,7 +598,7 @@ function PlayerModal({ clip, onClose }: { clip: LiveHighlight; onClose: () => vo
               />
               <div className="relative z-10 flex flex-col items-center gap-4 px-6 text-center">
                 <p className="max-w-md text-sm text-[var(--text-2)]">
-                  Клип защищён регионом. Открой на YouTube или ESPN.
+                  Откройте обзор на сайте источника.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <a
@@ -609,7 +610,7 @@ function PlayerModal({ clip, onClose }: { clip: LiveHighlight; onClose: () => vo
                     <Youtube className="h-4 w-4" />
                     Поиск на YouTube
                   </a>
-                  {clip.webUrl && (
+                  {clip.webUrl && /^https:\/\//i.test(clip.webUrl) && (
                     <a
                       href={clip.webUrl}
                       target="_blank"
@@ -674,7 +675,7 @@ function PlayerModal({ clip, onClose }: { clip: LiveHighlight; onClose: () => vo
             <p className="hc-player-caption">{clip.caption}</p>
           )}
           <div className="hc-player-cta">
-            {clip.webUrl && (
+            {clip.webUrl && /^https:\/\//i.test(clip.webUrl) && (
               <a
                 href={clip.webUrl}
                 target="_blank"

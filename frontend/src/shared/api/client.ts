@@ -10,6 +10,8 @@ export interface AuthUser {
 }
 
 export interface Team {
+  source?: 'database' | 'espn' | 'catalog';
+  hasStats?: boolean;
   id: number;
   name: string;
   city?: string;
@@ -32,6 +34,8 @@ export interface Team {
 
 export interface Match {
   id: number;
+  gameId?: string;
+  source?: 'database' | 'espn';
   date: string;
   status: 'scheduled' | 'finished' | 'postponed';
   homeTeam: Team;
@@ -42,6 +46,7 @@ export interface Match {
 
 export interface Player {
   id: number;
+  nba_person_id?: number | null;
   first_name: string;
   last_name: string;
   full_name?: string;
@@ -77,6 +82,7 @@ export interface Player {
   player_weight?: number;
   age?: number;
   team_abbrev?: string;
+  team_abbreviation?: string;
 }
 
 export interface Player {
@@ -122,15 +128,27 @@ export interface Prediction {
   team2?: Team;
   probabilityTeam1: number;
   probabilityTeam2: number;
-  expectedScoreTeam1: number;
-  expectedScoreTeam2: number;
+  expectedScoreTeam1: number | null;
+  expectedScoreTeam2: number | null;
   confidence: number;
   createdAt: string;
   probabilities: { team1: number; team2: number };
-  expectedScore: { team1: number; team2: number };
+  expectedScore: { team1: number | null; team2: number | null };
   modelVersion?: string;
   trainingDataPoints?: number;
   factors?: unknown;
+  context?: PredictionContext | null;
+}
+
+export interface PredictionContext {
+  status: 'applied' | 'neutral' | 'no_match' | 'unavailable';
+  baseTeam1: number;
+  adjustedTeam1: number;
+  shiftTeam1: number;
+  eventId: string | null;
+  gameDate: string | null;
+  sourceUrl: string | null;
+  absences: Array<{ side: 1 | 2; player: string; reportedAt: string }>;
 }
 
 export interface AdminUser extends AuthUser {
@@ -183,37 +201,52 @@ function normalizeUser(raw: any): AuthUser {
     username: raw?.username || email.split('@')[0] || name.toLowerCase(),
     name,
     role: raw?.role || 'user',
-    isBlocked: Boolean(raw?.isBlocked),
+    isBlocked: Boolean(raw?.isBlocked ?? raw?.is_blocked),
   };
 }
 
 function normalizeTeam(raw: any): Team {
+  const name = raw?.fullName || raw?.full_name || raw?.name || 'Unknown team';
+  const abbrev = raw?.abbrev || raw?.abbreviation || undefined;
+  const pointsFor = raw?.pointsFor ?? raw?.points_per_game ?? raw?.pointsPerGame ?? 0;
+  const pointsAgainst = raw?.pointsAgainst ?? raw?.points_against ?? 0;
+  const conference =
+    typeof raw?.conference === 'string'
+      ? { name: raw.conference, shortName: raw.conference }
+      : raw?.conference
+        ? { name: raw.conference.name, shortName: raw.conference.shortName }
+        : undefined;
+
   const brand = getTeamBrand({
-    abbrev: raw?.abbrev,
-    name: raw?.fullName || raw?.name,
+    abbrev,
+    name,
   });
 
   return {
     id: Number(raw?.id || 0),
-    name: raw?.fullName || raw?.name || 'Unknown team',
+    name,
     city: raw?.city || undefined,
-    abbrev: raw?.abbrev || undefined,
+    source: raw?.source,
+    hasStats: raw?.has_stats ?? raw?.hasStats,
+    abbrev,
     arena: raw?.arena || undefined,
     wins: Number(raw?.wins ?? raw?.seasonWins ?? 0),
     losses: Number(raw?.losses ?? raw?.seasonLosses ?? 0),
-    avgPointsFor: Number(raw?.pointsFor ?? raw?.pointsPerGame ?? 0),
-    avgPointsAgainst: Number(raw?.pointsAgainst ?? 0),
+    avgPointsFor: Number(pointsFor),
+    avgPointsAgainst: Number(pointsAgainst),
     championships: Number(raw?.championships ?? 0),
-    foundedYear: raw?.foundedYear ?? undefined,
-    pointsPerGame: Number(raw?.pointsPerGame ?? raw?.pointsFor ?? 0),
-    pointsAgainst: Number(raw?.pointsAgainst ?? 0),
+    foundedYear: raw?.foundedYear ?? raw?.founded_year ?? undefined,
+    pointsPerGame: Number(pointsFor),
+    pointsAgainst: Number(pointsAgainst),
     logoUrl: raw?.logoUrl || brand.logoUrl,
     brandColor: raw?.brandColor || brand.brandColor,
     accentColor: raw?.accentColor || brand.accentColor,
-    conference: raw?.conference
-      ? { name: raw.conference.name, shortName: raw.conference.shortName }
-      : undefined,
-    division: raw?.division ? { name: raw.division.name } : undefined,
+    conference,
+    division: typeof raw?.division === 'string'
+      ? { name: raw.division }
+      : raw?.division
+        ? { name: raw.division.name }
+        : undefined,
   };
 }
 
@@ -231,6 +264,8 @@ function normalizeMatch(raw: any): Match {
 
   return {
     id: Number(raw?.id || 0),
+    gameId: raw?.game_id ?? raw?.gameId,
+    source: raw?.source,
     date: dateStr,
     status: raw?.status || 'scheduled',
     homeTeam: normalizeTeam(raw?.homeTeam || {
@@ -249,13 +284,26 @@ function normalizeMatch(raw: any): Match {
 }
 
 function normalizePlayer(raw: any): Player {
+  const teamAbbrev = raw?.team_abbrev || raw?.team_abbreviation || raw?.team?.abbrev;
+  const rawTeam = raw?.team || (teamAbbrev
+    ? {
+        id: raw?.team_id,
+        name: raw?.team_name || teamAbbrev,
+        abbrev: teamAbbrev,
+        city: raw?.team_city,
+        foundedYear: raw?.team_founded_year,
+      }
+    : null);
+
   return {
     id: Number(raw?.id || 0),
+    nba_person_id: raw?.nba_person_id != null ? Number(raw.nba_person_id) : null,
     first_name: raw?.first_name || raw?.firstName || '',
     last_name: raw?.last_name || raw?.lastName || '',
+    full_name: raw?.full_name || raw?.fullName || raw?.player_name || undefined,
     number: raw?.number ? String(raw.number) : undefined,
     position: raw?.position || undefined,
-    team_id: 0,
+    team_id: Number(raw?.team_id || raw?.team?.id || 0),
     height: raw?.height ? raw.height : undefined,
     weight: raw?.weight ? Number(raw.weight) : undefined,
     birth_date: raw?.birth_date || undefined,
@@ -277,23 +325,24 @@ function normalizePlayer(raw: any): Player {
     usage_rate: raw?.usage_rate,
     true_shooting: raw?.true_shooting,
     net_rating: raw?.net_rating,
-    team: raw?.team_abbrev ? {
-      id: 0,
-      name: raw.team_abbrev,
-      abbrev: raw.team_abbrev,
-      wins: 0,
-      losses: 0,
-      avgPointsFor: 0,
-      avgPointsAgainst: 0
-    } : undefined
+    assist_percentage: raw?.assist_percentage,
+    offensive_rebound_pct: raw?.offensive_rebound_pct,
+    defensive_rebound_pct: raw?.defensive_rebound_pct,
+    player_height: raw?.player_height,
+    player_weight: raw?.player_weight,
+    age: raw?.age,
+    team_abbrev: teamAbbrev,
+    team: rawTeam ? normalizeTeam(rawTeam) : undefined
   };
 }
 
 function normalizePrediction(raw: any): Prediction {
   const probabilityTeam1 = Number(raw?.probabilityTeam1 ?? raw?.probabilities?.team1 ?? 0);
   const probabilityTeam2 = Number(raw?.probabilityTeam2 ?? raw?.probabilities?.team2 ?? 0);
-  const expectedScoreTeam1 = Number(raw?.expectedScoreTeam1 ?? raw?.expectedScore?.team1 ?? 0);
-  const expectedScoreTeam2 = Number(raw?.expectedScoreTeam2 ?? raw?.expectedScore?.team2 ?? 0);
+  const score1 = raw?.expectedScoreTeam1 ?? raw?.expectedScore?.team1;
+  const score2 = raw?.expectedScoreTeam2 ?? raw?.expectedScore?.team2;
+  const expectedScoreTeam1 = score1 == null ? null : Number(score1);
+  const expectedScoreTeam2 = score2 == null ? null : Number(score2);
   const confidenceValue = Number(raw?.confidence ?? 0);
 
   return {
@@ -319,6 +368,7 @@ function normalizePrediction(raw: any): Prediction {
     modelVersion: raw?.modelVersion || undefined,
     trainingDataPoints: raw?.trainingDataPoints ?? undefined,
     factors: raw?.factors || undefined,
+    context: raw?.context,
   };
 }
 
@@ -361,6 +411,10 @@ function normalizeBackup(raw: any): Backup {
 function normalizeByEndpoint(endpoint: string, payload: any): any {
   if (payload === null || payload === undefined) {
     return payload;
+  }
+
+  if (endpoint === '/auth/login') {
+    return { ...payload, user: normalizeUser(payload.user) };
   }
 
   if (endpoint.startsWith('/auth/me')) {
@@ -449,6 +503,36 @@ function normalizeByEndpoint(endpoint: string, payload: any): any {
   return payload;
 }
 
+export const SESSION_ENDED = 'score:session-ended';
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  clearCache();
+  window.dispatchEvent(new Event(SESSION_ENDED));
+}
+
+async function requestApi(endpoint: string, options?: RequestInit) {
+  const token = getToken();
+  const headers = new Headers(options?.headers);
+  if (options?.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', 'Bearer ' + token);
+
+  const response = await fetch(buildUrl(endpoint), { ...options, headers });
+  if (!response.ok) {
+    if (response.status === 401 && token && token === getToken() && endpoint !== '/auth/login') {
+      clearSession();
+    }
+    const error = await response.json().catch(() => null);
+    const detail = error?.detail || error?.error || error?.message;
+    throw new Error(typeof detail === 'string' ? detail : 'HTTP ' + response.status);
+  }
+  return response;
+}
+
+export async function requestFile(endpoint: string): Promise<Blob> {
+  return (await requestApi(endpoint)).blob();
+}
+
 export async function requestJson<T>(endpoint: string, options?: RequestInit, useCache = false): Promise<T> {
   const method = options?.method || 'GET';
   const cacheKey = `${method}:${endpoint}`;
@@ -460,27 +544,9 @@ export async function requestJson<T>(endpoint: string, options?: RequestInit, us
     }
   }
 
-  const token = getToken();
-  const response = await fetch(buildUrl(endpoint), {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers || {}),
-    },
-  });
-
+  const response = await requestApi(endpoint, options);
   const text = await response.text();
   const parsed = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      // Токен истек - очищаем
-      localStorage.removeItem(TOKEN_KEY);
-      throw new Error('Session expired. Please login again.');
-    }
-    throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
-  }
 
   const normalized = normalizeByEndpoint(endpoint, parsed) as T;
   if (method !== 'GET') {

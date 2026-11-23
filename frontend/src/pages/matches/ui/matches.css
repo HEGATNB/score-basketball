@@ -1,0 +1,130 @@
+.match-center {
+  padding-block: clamp(34px, 6vw, 84px);
+}
+
+.match-center-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.match-center-head h1 {
+  margin: 0;
+  font: 800 clamp(37px, 5.6vw, 78px)/1 var(--f-display);
+  letter-spacing: -0.025em;
+}
+
+.match-center-head p { margin: 10px 0 0; color: var(--text-2); }
+.match-center-head .btn { flex-shrink: 0; }
+.match-center-head .btn:disabled { opacity: 0.55; }
+
+.match-center-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.match-center-tabs, .match-center-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.match-center-tabs button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text-2);
+  font-size: 0.89rem;
+  font-weight: 600;
+}
+
+.match-center-tabs button:hover { background: var(--surface-2); }
+.match-center-tabs button[aria-pressed="true"] { border-color: #d26a3460; color: #ffb791; background: #d26a3422; }
+
+.match-center-search, .match-center-date {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+
+.match-center-fields input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  background: transparent;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.match-center-search input { width: 196px; }
+.match-center-search input::placeholder { color: var(--text-2); }
+.match-center-controls :focus-visible, .match-center-fields label:focus-within {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+.match-center-fields input:focus-visible { outline: none; }
+
+.match-center-live { margin-bottom: 16px; }
+.match-center-list { display: grid; gap: 16px; }
+.match-center-day { justify-content: flex-start; min-height: 60px; }
+.match-center-day > svg { color: var(--accent-strong); flex-shrink: 0; }
+.match-center-game { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--line); }
+.match-center-game .score-row { border-top: 0; }
+
+.match-center-predict {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 22px;
+  border-left: 1px solid var(--line);
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.match-center-predict:hover { background: var(--surface-2); }
+.match-center-predict:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
+.match-center-message { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 18px 24px; color: var(--text-2); }
+.match-center-more { justify-self: start; }
+
+.match-center-detail { display: grid; gap: 18px; }
+.match-center-detail > a { justify-self: start; }
+.match-center-detail .match-center-head { margin: 0; }
+.live-game-card .score-panel-head { border-bottom: 1px solid var(--line); }
+.live-game-card .score-feed-note { padding: 0; }
+.live-game-score { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 26px 12px; text-align: center; }
+.live-game-team { display: grid; min-width: 0; justify-items: center; gap: 7px; }
+.live-game-team > span { font: 800 clamp(2rem, 5vw, 4rem)/1 var(--f-display); }
+
+@media (max-width: 640px) {
+  .match-center.container-x { width: calc(100% - 28px); }
+  .match-center-head { align-items: flex-start; flex-direction: column; }
+  .match-center-tabs { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .match-center-tabs button { justify-content: center; min-height: 40px; padding-inline: 9px; font-size: 0.82rem; }
+  .match-center-fields { width: 100%; }
+  .match-center-search { flex: 1 1 100%; }
+  .match-center-search input { width: 100%; }
+  .match-center-game { grid-template-columns: minmax(0, 1fr); }
+  .match-center-predict { justify-content: space-between; min-height: 42px; padding-inline: 14px; border-top: 1px solid var(--line); border-left: 0; }
+}

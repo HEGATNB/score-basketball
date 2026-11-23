@@ -5,7 +5,6 @@
       dockerfile: nginx/Dockerfile
     ports:
       - "80:80"
-      - "443:443"
     depends_on:
       - backend
     networks:
@@ -14,13 +13,13 @@
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in backend/env}"
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -qx PONG']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,42 +27,26 @@
     networks:
       - app_network
 
-  # Удаляем сервис db полностью или комментируем его
-
   backend:
     build: ./backend
-    ports:
-      - "8000:8000"
+    env_file:
+      - ./backend/env
     environment:
-      - DB_NAME=nba
-      - DB_USER=postgres
-      - DB_PASSWORD=12345678
-      - DB_HOST=host.docker.internal  # Для Windows/Mac
-      # - DB_HOST=172.17.0.1  # Для Linux (раскомментируйте эту строку)
-      - DB_PORT=5432
+      - DB_HOST=host.docker.internal
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - JWT_SECRET=hzIoUfN8qA5t535Rpv_jvyzul5aRLwxLPJIxcINBCx4
-      - JWT_EXPIRES_IN=7d
-      - ENVIRONMENT=development
-      - MODEL_DIR=/app/models
-      - TRUSTED_HOSTS=localhost,backend,nginx,127.0.0.1
-      - SECURE_COOKIES=true
+      - REDIS_URL=
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in backend/env}
+      - FORWARDED_ALLOW_IPS=*
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
-      - ./backend:/app
-      - /app/__pycache__
       - backend_models:/app/models
-      - backend_backups:/app/backups
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # Для Linux
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - app_network
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
 
 networks:
   app_network:
@@ -72,4 +55,3 @@ networks:
 volumes:
   redis_data:
   backend_models:
-  backend_backups:

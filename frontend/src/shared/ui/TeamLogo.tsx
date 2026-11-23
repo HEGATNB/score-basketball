@@ -14,7 +14,7 @@ import { getTeamBrand } from '@/shared/lib/teamBrand';
  */
 
 interface TeamLogoProps {
-  team?: Pick<Team, 'name' | 'abbrev' | 'logoUrl' | 'brandColor' | 'accentColor'> | null;
+  team?: Partial<Pick<Team, 'name' | 'abbrev' | 'logoUrl' | 'brandColor' | 'accentColor'>> | null;
   /** Size token. Numbers also accepted for fine control */
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | number;
   className?: string;
