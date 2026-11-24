@@ -16,6 +16,7 @@ from database import engine, Base, get_db
 from sqlalchemy.orm import Session
 from scheduler import data_updater
 from services.model_metrics_service import ModelMetricsService
+from config import config
 import atexit
 
 try:
@@ -23,22 +24,24 @@ try:
 except Exception:
     load_model = None
 
+# В production скрываем автоматическую документацию (/docs, /openapi.json),
+# чтобы не раскрывать схему API и эндпоинты публично.
+_docs_kwargs = {}
+if config.is_production:
+    _docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
 app = FastAPI(
     title="HoopsAI API",
     description="API for basketball match prediction",
-    version="1.0.0"
+    version="1.0.0",
+    **_docs_kwargs
 )
 
 # CORS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-    ],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -187,7 +190,10 @@ def neural_predict(request: NeuralPredictionRequest):
 
 @app.post("/api/neural/retrain")
 @app.post("/neural/retrain")
-async def neural_retrain(background_tasks: BackgroundTasks):
+async def neural_retrain(request: Request, background_tasks: BackgroundTasks):
+    # Тяжёлая операция (импорт ESPN + обучение) — только для администраторов.
+    from middleware.auth import require_admin
+    await require_admin(request)
     background_tasks.add_task(retrain_task)
     return {"message": "Retraining started in background. This may take several minutes."}
 
@@ -293,78 +299,23 @@ async def force_model_retrain(request: Request):
 @app.get("/api/health")
 @app.get("/health")
 async def health_check():
-    db_status = "unknown"
+    # Отдаём только статус; детали исключений БД не раскрываем наружу.
+    db_status = "down"
     try:
         from database import SessionLocal
         from sqlalchemy import text
         db = SessionLocal()
         db.execute(text("SELECT 1")).scalar()
         db.close()
-        db_status = "connected"
-    except Exception as e:
-        db_status = f"error: {str(e)}"
+        db_status = "ok"
+    except Exception:
+        db_status = "down"
 
     return {
-        "status": "OK",
-        "timestamp": datetime.now().isoformat(),
-        "neural_loaded": model is not None,
+        "status": "ok" if db_status == "ok" else "degraded",
         "database": db_status,
         "service": "HoopsAI API",
-        "scheduler_running": data_updater.scheduler.running if hasattr(data_updater, 'scheduler') else False
     }
-
-@app.get("/api/debug/db-check")
-@app.get("/debug/db-check")
-async def check_database():
-    try:
-        from database import SessionLocal
-        db = SessionLocal()
-
-        from sqlalchemy import text
-        tables = db.execute(text("""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-        """)).fetchall()
-
-        table_list = [t[0] for t in tables]
-
-        game_count = 0
-        sample_games = []
-
-        if 'game' in table_list:
-            game_count = db.execute(text("SELECT COUNT(*) as count FROM game")).scalar()
-
-            games = db.execute(text("""
-                SELECT game_id, team_name_home, team_name_away, game_date
-                FROM game
-                LIMIT 3
-            """)).fetchall()
-
-            for row in games:
-                sample_games.append({
-                    "game_id": row[0],
-                    "home": row[1],
-                    "away": row[2],
-                    "date": str(row[3]) if row[3] else None
-                })
-
-        db.close()
-
-        return {
-            "database": "PostgreSQL",
-            "connected": True,
-            "tables": table_list,
-            "games_count": game_count,
-            "sample_games": sample_games
-        }
-    except Exception as e:
-        return {
-            "database": "PostgreSQL",
-            "connected": False,
-            "error": str(e)
-        }
-
 
 # ПОДКЛЮЧЕНИЕ КОНТРОЛЛЕРОВ
 
@@ -398,7 +349,6 @@ async def root():
         },
         "endpoints": {
             "health": "/api/health or /health",
-            "debug": "/api/debug/db-check or /debug/db-check",
             "model_metrics": {
                 "latest": "/api/model/metrics/latest",
                 "history": "/api/model/metrics/history",
@@ -417,8 +367,7 @@ async def root():
             "auth": {
                 "register": "POST /api/auth/register or /auth/register",
                 "login": "POST /api/auth/login or /auth/login",
-                "me": "GET /api/auth/me or /auth/me",
-                "init": "POST /api/auth/init or /auth/init"
+                "me": "GET /api/auth/me or /auth/me"
             },
             "teams": {
                 "all": "GET /api/teams or /teams",
@@ -452,5 +401,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=False
     )

@@ -37,8 +37,6 @@ async def get_current_user(request: Request):
         print("Нет заголовка Authorization")
         return None
 
-    print(f"Получен токен: {token[:20]}...")
-
     # Проверка в черном списке
     if redis_service.is_available() and redis_service.is_token_blacklisted(token):
         print("Токен в черном списке")
@@ -56,7 +54,7 @@ async def get_current_user(request: Request):
         print(f"Токены пользователя {payload.user_id} были отозваны")
         return None
 
-    print(f"Пользователь аутентифицирован: ID={payload.user_id}, Email={payload.email}")
+    print(f"Пользователь аутентифицирован: ID={payload.user_id}")
     return payload
 
 # Проверка роли администратора

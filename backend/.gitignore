@@ -23,6 +23,7 @@ share/python-wheels/
 *.sqlite3
 *.db
 *.sql
+!migrations/*.sql
 data/*.sqlite
 data/*.db
 data/*.sql

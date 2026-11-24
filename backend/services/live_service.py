@@ -11,9 +11,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-ESPN_SCOREBOARD = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-ESPN_SUMMARY = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
-ESPN_NEWS = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/news"
+ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
+ESPN_NEWS = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news"
 ESPN_ARTICLE = "https://content.core.api.espn.com/v1/sports/news/{id}"
 
 # url -> (время получения, данные)

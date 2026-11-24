@@ -1,4 +1,4 @@
-﻿FROM python:3.11
+FROM python:3.11
 
 WORKDIR /app
 
@@ -13,4 +13,4 @@ COPY . .
 # Создаем папки для моделей и бэкапов
 RUN mkdir -p /app/models /app/backups
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

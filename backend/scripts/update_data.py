@@ -202,7 +202,7 @@ def is_special_game(away_name, home_name):
 def fetch_espn_games(date):
     """Получение списка игр с ESPN API"""
     date_str = date.strftime("%Y%m%d")
-    url = "http://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+    url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     params = {"dates": date_str, "limit": 100}
 
     try:
@@ -221,7 +221,7 @@ def fetch_espn_games(date):
 
 def fetch_detailed_stats(game_id):
     """Получение детальной статистики игры"""
-    url = f"http://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
     params = {"event": game_id}
 
     try:
@@ -376,27 +376,24 @@ def parse_espn_game(event, team_id_map):
         return None
 
 
-def game_exists(conn, game_id):
-    cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM game WHERE game_id = %s", (game_id,))
-    exists = cursor.fetchone() is not None
-    cursor.close()
-    return exists
-
-
 def insert_game(conn, game):
+    """Идемпотентная вставка матча.
+
+    Использует UNIQUE(game_id) + ON CONFLICT DO NOTHING вместо SELECT-перед-INSERT,
+    что устраняет гонку и лишний запрос. Требует уникальное ограничение по game_id
+    (создаётся миграцией backend/migrations/001_reference_catalog_analytics.sql).
+    """
     cursor = conn.cursor()
-    if game_exists(conn, game['game_id']):
-        return False
 
     columns = ', '.join(game.keys())
     placeholders = ', '.join(['%s'] * len(game))
-    query = f"INSERT INTO game ({columns}) VALUES ({placeholders})"
+    query = f"INSERT INTO game ({columns}) VALUES ({placeholders}) ON CONFLICT (game_id) DO NOTHING"
 
     try:
         cursor.execute(query, list(game.values()))
+        inserted = cursor.rowcount > 0
         conn.commit()
-        return True
+        return inserted
     except Exception as e:
         print(f" Error inserting game: {e}")
         conn.rollback()
@@ -604,6 +601,15 @@ def update_db_with_new_games(db_path=None, days_back=2):
 
     conn.close()
 
+    # Обновляем аналитические представления после успешного импорта.
+    # Ошибки обновления представлений не делают импорт неудачным.
+    views_refresh = {}
+    try:
+        from scripts.refresh_analytics_views import refresh_analytics_views
+        views_refresh = refresh_analytics_views()
+    except Exception as e:
+        print(f"  Refresh analytics views skipped/failed: {e}")
+
     print(f"\n{'=' * 60}")
     print(f"FINAL STATISTICS:")
     print(f"   • Updated results: {updated_results}")
@@ -616,7 +622,8 @@ def update_db_with_new_games(db_path=None, days_back=2):
         "updated_results": updated_results,
         "new_games": new_count,
         "failed": failed_count,
-        "skipped": skipped_count
+        "skipped": skipped_count,
+        "analytics_views": views_refresh,
     }
 
 

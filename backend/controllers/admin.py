@@ -382,6 +382,16 @@ async def restore_backup(
 ):
     await require_admin(request)
 
+    # Восстановление выполняет TRUNCATE ... CASCADE и неполное (без password_hash,
+    # максимум 1000 матчей), поэтому в production оно отключено: использовать
+    # pg_dump или снимки Neon и восстанавливать только на staging.
+    from config import config
+    if config.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Restore is disabled in production. Use Neon snapshots or pg_dump."
+        )
+
     try:
         result = db.execute(
             text("SELECT filename FROM backups WHERE id = :id"),

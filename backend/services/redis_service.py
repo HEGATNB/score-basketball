@@ -48,7 +48,7 @@ class RedisService:
         try:
             key = f"blacklist:{token}"
             self.client.setex(key, expires_in, "1")
-            logger.info(f"Token blacklisted: {token[:20]}...")
+            logger.info("Token blacklisted")
             return True
         except Exception as e:
             logger.error(f"Error blacklisting token: {e}")

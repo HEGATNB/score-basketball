@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import List
-import secrets
 
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / 'env'
@@ -42,12 +41,11 @@ class Config:
         return ""
 
     # JWT настройки
+    # Единый источник секрета: берётся только из окружения, без fallback.
+    # Fail-closed: если секрет не задан, приложение не запускается.
     JWT_SECRET = os.getenv("JWT_SECRET")
-    if not JWT_SECRET and os.getenv("ENVIRONMENT") == "production":
-        raise ValueError("JWT_SECRET must be set in production!")
-    elif not JWT_SECRET:
-        JWT_SECRET = secrets.token_urlsafe(32)
-        print("WARNING: Using generated JWT secret. Set JWT_SECRET in env for production!")
+    if not JWT_SECRET:
+        raise ValueError("JWT_SECRET must be set in the environment (see .env.example)!")
 
     JWT_EXPIRES_IN = os.getenv("JWT_EXPIRES_IN", "7d")
 
@@ -64,11 +62,13 @@ class Config:
 
     @property
     def ALLOWED_ORIGINS(self) -> List[str]:
+        # Источник один — переменная окружения (список через запятую). Без wildcard.
+        raw = os.getenv("ALLOWED_ORIGINS")
+        if raw:
+            return [o.strip() for o in raw.split(",") if o.strip()]
         if self.ENVIRONMENT == "production":
-            return [
-                "https://yourdomain.com",
-                "https://api.yourdomain.com"
-            ]
+            # В production origins задаются явно; отсутствие списка — пустой allowlist.
+            return []
         return [
             "http://localhost:3000",
             "http://localhost:5173",

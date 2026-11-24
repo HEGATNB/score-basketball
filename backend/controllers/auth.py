@@ -23,7 +23,7 @@ async def login(
 ):
     try:
         body = await request.json()
-        print(f"Получен запрос на логин: {body}")
+        print("Получен запрос на логин")
 
         identifier = body.get("identifier") or body.get("email")
         password = body.get("password")
@@ -413,7 +413,7 @@ async def register(
 ):
     try:
         body = await request.json()
-        print(f"Получен запрос на регистрацию: {body}")
+        print("Получен запрос на регистрацию")
 
         email = body.get("email")
         password = body.get("password")
@@ -469,27 +469,6 @@ async def register(
         raise
     except Exception as e:
         print(f"Ошибка в register: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-
-@router.post("/init")
-async def init_database(db: Session = Depends(get_db)):
-    try:
-        print("Инициализация базы данных тестовыми пользователями")
-        service = AuthService(db)
-        result = service.init_database()
-        print(f"Инициализация завершена: {result}")
-        return {
-            "message": "Database initialized",
-            "created_users": result.get("created_users", [])
-        }
-    except Exception as e:
-        print(f"Ошибка в init: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(

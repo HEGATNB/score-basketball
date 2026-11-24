@@ -87,7 +87,6 @@ class AuthService:
         try:
             # Хеширование пароль
             password_hash = get_password_hash(user_data["password"])
-            print(f"Создан хеш пароля: {password_hash[:20]}...")
 
             username = user_data.get("username") or user_data.get("name") or user_data["email"].split('@')[0]
 

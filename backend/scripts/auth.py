@@ -1,14 +1,14 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
-import os
-from dotenv import load_dotenv
+import uuid
 import bcrypt
 
-load_dotenv()
+# Единый источник JWT-секрета и срока жизни токена — config.py (только окружение, fail-closed).
+from config import config
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
-JWT_EXPIRES_IN = os.getenv("JWT_EXPIRES_IN", "7d")
+JWT_SECRET = config.JWT_SECRET
+JWT_EXPIRES_IN = config.JWT_EXPIRES_IN
 
 def get_password_hash(password: str) -> str:
     salt = bcrypt.gensalt()
@@ -64,8 +64,15 @@ def generate_token(payload: TokenPayload) -> str:
 
     to_encode = payload.to_dict()
     minutes = parse_expires_in(JWT_EXPIRES_IN)
-    expire = datetime.utcnow() + timedelta(minutes=minutes)
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=minutes)
+    # iat нужен для отзыва всех токенов пользователя (/logout-all);
+    # jti — уникальный идентификатор токена для точечного отзыва.
+    to_encode.update({
+        "exp": expire,
+        "iat": now,
+        "jti": str(uuid.uuid4()),
+    })
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
     return encoded_jwt
 

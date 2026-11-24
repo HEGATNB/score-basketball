@@ -18,6 +18,60 @@ from repositories.team_repository import TeamRepository
 
 MODEL_DIR = "./models"
 
+# Артефакты нейросети загружаются один раз на процесс и разделяются между всеми
+# экземплярами AIService. Раньше model.h5 считывался с диска на каждый запрос
+# /predict, /predict/preview и /predict/stats (страница /matches открывала до 18
+# таких запросов параллельно).
+_ARTIFACTS = {
+    "loaded": False,
+    "model": None,
+    "scaler": None,       # устаревший единый scaler.pkl (fallback)
+    "scaler_home": None,  # текущий формат обучения: раздельные scaler
+    "scaler_away": None,
+    "team_emas": {},
+}
+
+# DDL predictions выполняется один раз на процесс, а не на каждый запрос.
+_PREDICTIONS_TABLE_CREATED = False
+
+
+def _load_artifacts_once():
+    if _ARTIFACTS["loaded"]:
+        return
+    _ARTIFACTS["loaded"] = True
+
+    model_path = os.path.join(MODEL_DIR, "model.h5")
+    scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
+    scaler_home_path = os.path.join(MODEL_DIR, "scaler_home.pkl")
+    scaler_away_path = os.path.join(MODEL_DIR, "scaler_away.pkl")
+    emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
+
+    if not os.path.exists(model_path):
+        return
+    try:
+        from tensorflow.keras.models import load_model
+        _ARTIFACTS["model"] = load_model(model_path)
+
+        # Сначала используем пару scaler, созданную текущей версией обучения.
+        # Для старых артефактов — резервный единый scaler.pkl.
+        if os.path.exists(scaler_home_path) and os.path.exists(scaler_away_path):
+            with open(scaler_home_path, "rb") as f:
+                _ARTIFACTS["scaler_home"] = pickle.load(f)
+            with open(scaler_away_path, "rb") as f:
+                _ARTIFACTS["scaler_away"] = pickle.load(f)
+            print("AI Service: загружены раздельные scaler (scaler_home + scaler_away)")
+        elif os.path.exists(scaler_path):
+            with open(scaler_path, "rb") as f:
+                _ARTIFACTS["scaler"] = pickle.load(f)
+            print("AI Service: загружен устаревший единый scaler.pkl")
+
+        with open(emas_path, "rb") as f:
+            _ARTIFACTS["team_emas"] = pickle.load(f)
+
+        print("AI Service: модель загружена")
+    except Exception as e:
+        print(f"AI Service: ошибка загрузки модели: {e}")
+
 
 class AIService:
     def __init__(self, db: Session):
@@ -36,18 +90,20 @@ class AIService:
             "paceAdvantage": 0.05
         }
 
-        # Загружаем модель если есть
+        # Модель и scaler разделяются между запросами; DDL выполняется один раз.
+        _load_artifacts_once()
+        self.model = _ARTIFACTS["model"]
+        self.scaler = _ARTIFACTS["scaler"]
+        self.scaler_home = _ARTIFACTS["scaler_home"]
+        self.scaler_away = _ARTIFACTS["scaler_away"]
+        self.team_emas = _ARTIFACTS["team_emas"]
 
-        self.model = None
-        self.scaler = None
-        self.team_emas = {}
-        self.load_model()
+        self._ensure_predictions_table()
 
-        # Создаем таблицу для предсказаний если нет
-
-        self._create_predictions_table()
-
-    def _create_predictions_table(self):
+    def _ensure_predictions_table(self):
+        global _PREDICTIONS_TABLE_CREATED
+        if _PREDICTIONS_TABLE_CREATED:
+            return
         try:
             self.db.execute(text("""
                 CREATE TABLE IF NOT EXISTS predictions (
@@ -66,30 +122,24 @@ class AIService:
                 )
             """))
             self.db.commit()
+            _PREDICTIONS_TABLE_CREATED = True
             print("Таблица predictions создана/проверена в PostgreSQL")
         except Exception as e:
             print(f"Ошибка при создании таблицы predictions: {e}")
             self.db.rollback()
 
-    def load_model(self):
+    def _scale(self, home_feat, away_feat):
+        """Масштабирует признаки так же, как при обучении модели.
 
-        # Загрузка обученной модели
-
-        model_path = os.path.join(MODEL_DIR, "model.h5")
-        scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
-        emas_path = os.path.join(MODEL_DIR, "team_emas.pkl")
-
-        if os.path.exists(model_path):
-            try:
-                from tensorflow.keras.models import load_model
-                self.model = load_model(model_path)
-                with open(scaler_path, "rb") as f:
-                    self.scaler = pickle.load(f)
-                with open(emas_path, "rb") as f:
-                    self.team_emas = pickle.load(f)
-                print("AI Service: модель загружена")
-            except Exception as e:
-                print(f"AI Service: ошибка загрузки модели: {e}")
+        Поддерживает и раздельные scaler (текущий формат train_model.py), и
+        устаревший единый scaler.pkl.
+        """
+        if self.scaler_home is not None and self.scaler_away is not None:
+            return np.hstack([
+                self.scaler_home.transform(home_feat),
+                self.scaler_away.transform(away_feat),
+            ])
+        return self.scaler.transform(np.hstack([home_feat, away_feat]))
 
     async def compute_preview(self, team1_id: int, team2_id: int) -> Dict[str, Any]:
         team1 = await self._get_team_info(team1_id)
@@ -98,7 +148,8 @@ class AIService:
             raise ValueError("One of the teams was not found")
 
         # Используем нейросетевую модель, если она доступна
-        if self.model is not None and self.scaler is not None and self.team_emas:
+        if self.model is not None and self.team_emas and (
+                self.scaler is not None or (self.scaler_home is not None and self.scaler_away is not None)):
             try:
                 home_id, away_id = str(team1_id), str(team2_id)
                 if home_id in self.team_emas and away_id in self.team_emas:
@@ -106,9 +157,9 @@ class AIService:
                     away_ema = self.team_emas[away_id]
                     STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf',
                              'fg_pct', 'fg3_pct', 'ft_pct']
-                    feat = [home_ema.get(s, 110) for s in STATS] + \
-                           [away_ema.get(s, 110) for s in STATS]
-                    feat_scaled = self.scaler.transform(np.array(feat).reshape(1, -1))
+                    home_feat = np.array([home_ema.get(s, 110) for s in STATS], dtype=np.float32).reshape(1, -1)
+                    away_feat = np.array([away_ema.get(s, 110) for s in STATS], dtype=np.float32).reshape(1, -1)
+                    feat_scaled = self._scale(home_feat, away_feat)
                     prob = float(self.model.predict(feat_scaled, verbose=0)[0][0])
                     prob1 = prob * 100
                     return {
@@ -186,7 +237,8 @@ class AIService:
             raise ValueError("One of the teams was not found in the database")
 
         # Если есть загруженная модель, используем её
-        if self.model is not None and self.scaler is not None and self.team_emas:
+        if self.model is not None and self.team_emas and (
+                self.scaler is not None or (self.scaler_home is not None and self.scaler_away is not None)):
             try:
                 return await self._predict_with_model(team1_id, team2_id, user_id, team1, team2)
             except Exception as e:
@@ -208,21 +260,23 @@ class AIService:
         away_ema = self.team_emas[away_id]
 
         STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg_pct', 'fg3_pct', 'ft_pct']
-        feat = []
+        home_feat_vals = []
+        away_feat_vals = []
         features_dict = {}
 
         for stat in STATS:
             val = home_ema.get(stat, 110)
-            feat.append(val)
+            home_feat_vals.append(val)
             features_dict[f"home_{stat}"] = val
 
         for stat in STATS:
             val = away_ema.get(stat, 110)
-            feat.append(val)
+            away_feat_vals.append(val)
             features_dict[f"away_{stat}"] = val
 
-        feat_array = np.array(feat).reshape(1, -1)
-        feat_scaled = self.scaler.transform(feat_array)
+        home_feat = np.array(home_feat_vals, dtype=np.float32).reshape(1, -1)
+        away_feat = np.array(away_feat_vals, dtype=np.float32).reshape(1, -1)
+        feat_scaled = self._scale(home_feat, away_feat)
         prob = self.model.predict(feat_scaled)[0][0]
 
         prob1 = float(prob) * 100

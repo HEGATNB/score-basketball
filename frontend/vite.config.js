@@ -56,10 +56,6 @@ export default defineConfig({
             if (id.includes('react-router')) {
               return 'router';
             }
-            // Document export utilities — used in admin only
-            if (id.includes('docx')) {
-              return 'docx';
-            }
             // Everything else from node_modules
             return 'vendor';
           }

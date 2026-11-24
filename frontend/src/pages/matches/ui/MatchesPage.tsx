@@ -64,7 +64,8 @@ export const MatchesPage = () => {
   }, []);
 
   // Pre-fetch real AI probabilities for the first 18 scheduled matches.
-  // /predict/preview is read-only, no auth, no DB writes.
+  // /predict/preview/batch is read-only, no auth, no DB writes — one request
+  // replaces up to 18 parallel /predict/preview calls.
   useEffect(() => {
     if (matches.length === 0) return;
     const targets = matches
@@ -73,22 +74,30 @@ export const MatchesPage = () => {
       .filter((m) => m.homeTeam?.id && m.awayTeam?.id);
     if (targets.length === 0) return;
     let cancelled = false;
-    Promise.all(
-      targets.map((m) =>
-        apiRequest<{ probabilityTeam1: number; probabilityTeam2: number }>(
-          `/predict/preview?team1=${m.homeTeam.id}&team2=${m.awayTeam.id}`,
-          undefined,
-          false,
-        )
-          .then((p) => [m.id, { a: Math.round(p.probabilityTeam1), b: Math.round(p.probabilityTeam2) }] as const)
-          .catch(() => null),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      const map: Record<number, { a: number; b: number }> = {};
-      for (const r of results) if (r) map[r[0]] = r[1];
-      if (Object.keys(map).length > 0) setAiByMatch((prev) => ({ ...prev, ...map }));
-    });
+    apiRequest<{
+      previews: Record<string, { probabilityTeam1: number; probabilityTeam2: number } | null>;
+    }>(
+      '/predict/preview/batch',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          matches: targets.map((m) => ({ team1: m.homeTeam.id, team2: m.awayTeam.id })),
+        }),
+      },
+      false,
+    )
+      .then((res) => {
+        if (cancelled) return;
+        const map: Record<number, { a: number; b: number }> = {};
+        for (const m of targets) {
+          const p = res.previews?.[`${m.homeTeam.id}:${m.awayTeam.id}`];
+          if (p && typeof p.probabilityTeam1 === 'number') {
+            map[m.id] = { a: Math.round(p.probabilityTeam1), b: Math.round(p.probabilityTeam2) };
+          }
+        }
+        if (Object.keys(map).length > 0) setAiByMatch((prev) => ({ ...prev, ...map }));
+      })
+      .catch(() => null);
     return () => {
       cancelled = true;
     };

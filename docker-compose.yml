@@ -1,4 +1,4 @@
-﻿services:
+services:
   nginx:
     build:
       context: .
@@ -15,13 +15,14 @@
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Порт не публикуется наружу — доступ только из app_network; пароль обязателен.
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-score_redis_change_me}
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: sh -c "redis-server --appendonly yes --requirepass $$REDIS_PASSWORD"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,18 +32,17 @@
 
   backend:
     build: ./backend
-    ports:
-      - "8000:8000"
+    # Порт не публикуется наружу — доступ только через nginx.
     env_file:
       - ./backend/env
     environment:
       - DB_HOST=host.docker.internal
       - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-score_redis_change_me}
     depends_on:
       - redis
     volumes:
-      - ./backend:/app
-      - /app/__pycache__
+      # Код не монтируется томом: образ собирается из Dockerfile (без --reload).
       - backend_models:/app/models
       - backend_backups:/app/backups
     extra_hosts:

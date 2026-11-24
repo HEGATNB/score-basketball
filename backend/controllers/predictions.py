@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+from pydantic import BaseModel
 
 from database import get_db
 from services.ai_service import AIService
 from services.team_service import TeamService
 from services.audit_service import AuditService
 from services.user_stats_service import UserStatsService, evaluate_challenges
+from services.redis_service import redis_service
 from middleware.auth import get_current_user, require_admin
 import schemas
 
@@ -104,23 +106,54 @@ async def predict(
         )
 
 
+class BatchPreviewItem(BaseModel):
+    team1: int
+    team2: int
+
+
+class BatchPreviewRequest(BaseModel):
+    matches: List[BatchPreviewItem]
+
+
 @router.get("/predict/preview")
 async def predict_preview(
+        request: Request,
         team1: int,
         team2: int,
         db: Session = Depends(get_db),
 ):
     """Предварительная оценка вероятностей нейросетью без авторизации и записи в базу.
-    Used by the home/match cards to surface real model probabilities
+
+    Ограничена rate limit и кешируется, т.к. страница /matches открывала до 18 таких
+    запросов параллельно при каждом заходе.
     """
     if team1 == team2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Teams must be different",
         )
+
+    # Rate limit по IP: 30 запросов за 60 секунд.
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, _remaining, reset_time = redis_service.check_rate_limit(
+        f"preview:{client_ip}", limit=30, period=60
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many preview requests. Try again in {reset_time} seconds",
+        )
+
+    cache_key = f"preview:{team1}:{team2}"
+    cached = redis_service.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         ai_svc = AIService(db)
-        return await ai_svc.compute_preview(team1, team2)
+        result = await ai_svc.compute_preview(team1, team2)
+        redis_service.set(cache_key, result, expire=300)
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -129,6 +162,28 @@ async def predict_preview(
             status_code=500,
             detail="Could not load prediction preview",
         )
+
+
+@router.post("/predict/preview/batch")
+async def predict_preview_batch(
+        payload: BatchPreviewRequest,
+        db: Session = Depends(get_db),
+):
+    """Один запрос для предварительных вероятностей нескольких матчей.
+
+    Заменяет N параллельных вызовов /predict/preview одним запросом.
+    """
+    ai_svc = AIService(db)
+    out = {}
+    for item in payload.matches[:50]:
+        if item.team1 == item.team2:
+            continue
+        key = f"{item.team1}:{item.team2}"
+        try:
+            out[key] = await ai_svc.compute_preview(item.team1, item.team2)
+        except Exception:
+            out[key] = None
+    return {"previews": out}
 
 
 @router.get("/predict/stats")

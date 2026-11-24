@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import sys
@@ -42,8 +42,10 @@ class DataUpdater:
 
         try:
             logger.info("Loading new games and updating results from ESPN...")
-            # days_back=2 = проверяет вчера и сегодня
-            result = update_db_with_new_games(days_back=2)
+            # days_back=2 = проверяет вчера и сегодня.
+            # Синхронный импорт ESPN выполняется в отдельном потоке, чтобы не блокировать event loop.
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, update_db_with_new_games, None, 2)
 
             logger.info(f"Updated results (scheduled -> finished): {result.get('updated_results', 0)}")
             logger.info(f"New games added: {result.get('new_games', 0)}")
@@ -119,7 +121,9 @@ class DataUpdater:
                 db.close()
 
             logger.info("Starting model training...")
-            model, scaler, team_emas = train_model()
+            # Обучение TensorFlow — в отдельном потоке, чтобы не блокировать event loop.
+            loop = asyncio.get_event_loop()
+            model, scaler, team_emas = await loop.run_in_executor(None, train_model)
 
             training_duration = time.time() - start_time
 
@@ -261,9 +265,11 @@ class DataUpdater:
     # Запуск планировщика
 
     def start(self):
+        # Время задано в UTC: матчи восточного побережья США заканчиваются к ~05:00 UTC,
+        # поэтому импорт в 10:00 UTC уже содержит финальные счета.
         self.scheduler.add_job(
             self.update_data_daily,
-            trigger=CronTrigger(hour=23, minute=59),
+            trigger=CronTrigger(hour=10, minute=0, timezone="UTC"),
             id="daily_data_update",
             name="Daily data update",
             replace_existing=True
@@ -271,7 +277,7 @@ class DataUpdater:
 
         self.scheduler.add_job(
             self.retrain_model_weekly,
-            trigger=CronTrigger(day_of_week='sun', hour=0, minute=30),
+            trigger=CronTrigger(day_of_week='sun', hour=10, minute=30, timezone="UTC"),
             id="weekly_model_retrain",
             name="Weekly model retraining",
             replace_existing=True
@@ -279,8 +285,8 @@ class DataUpdater:
 
         self.scheduler.start()
         logger.info("Scheduler started")
-        logger.info("Daily data update scheduled at 23:59")
-        logger.info("Weekly model retraining scheduled at Sunday 00:30")
+        logger.info("Daily data update scheduled at 10:00 UTC")
+        logger.info("Weekly model retraining scheduled at Sunday 10:30 UTC")
 
         for job in self.scheduler.get_jobs():
             logger.info(f"Job: {job.name} (ID: {job.id}) - next run: {job.next_run_time}")
@@ -294,6 +300,7 @@ class DataUpdater:
     # Получение статуса последних операций
 
     def get_status(self):
+        freshness = self._get_freshness()
         return {
             "last_data_update": self.last_update_status,
             "last_model_retrain": self.last_retrain_status,
@@ -301,7 +308,43 @@ class DataUpdater:
                 "daily_data_update") else None,
             "next_model_retrain": self.scheduler.get_job(
                 "weekly_model_retrain").next_run_time if self.scheduler.get_job("weekly_model_retrain") else None,
-            "is_running": self.scheduler.running
+            "is_running": self.scheduler.running,
+            **freshness,
+        }
+
+    def _get_freshness(self):
+        """Время последнего успешного импорта, последняя дата матча и отставание в днях.
+
+        Используется freshness-панелью администратора, чтобы заметить устаревание
+        данных до обращения пользователя.
+        """
+        last_successful_import = None
+        if self.last_update_status and self.last_update_status.get("success"):
+            last_successful_import = self.last_update_status.get("timestamp")
+
+        latest_game_date = None
+        games_lag_days = None
+        try:
+            from sqlalchemy import text
+            db = SessionLocal()
+            row = db.execute(text("SELECT MAX(game_date) FROM game WHERE game_date IS NOT NULL")).fetchone()
+            db.close()
+            if row and row[0] is not None:
+                latest_game_date = str(row[0])
+                try:
+                    parsed = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    games_lag_days = max(0, (datetime.now(timezone.utc) - parsed).days)
+                except Exception:
+                    games_lag_days = None
+        except Exception as e:
+            logger.warning(f"Freshness query failed: {e}")
+
+        return {
+            "last_successful_import": last_successful_import,
+            "latest_game_date": latest_game_date,
+            "games_lag_days": games_lag_days,
         }
 
 data_updater = DataUpdater()
