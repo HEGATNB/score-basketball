@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer
 import sys
 import os
 from datetime import datetime
-from jose import jwt  # вместо import jwt
+import jwt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.auth import verify_token, TokenPayload

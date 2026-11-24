@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from jose import JWTError, jwt
+import jwt
 import uuid
 import bcrypt
 
@@ -82,5 +82,5 @@ def verify_token(token: str) -> Optional[TokenPayload]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return TokenPayload.from_dict(payload)
-    except JWTError:
+    except jwt.PyJWTError:
         return None

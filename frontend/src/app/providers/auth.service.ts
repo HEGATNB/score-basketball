@@ -57,4 +57,10 @@ export const authService = {
       body: JSON.stringify(payload),
     });
   },
+
+  async logoutAll() {
+    return requestJson<{ message: string }>('/auth/logout-all', {
+      method: 'POST',
+    });
+  },
 };

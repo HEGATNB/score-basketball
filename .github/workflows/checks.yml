@@ -25,7 +25,10 @@ jobs:
       - name: Dependency audit (pip-audit)
         run: |
           pip install pip-audit
-          pip-audit
+          pip install --upgrade setuptools
+          # PYSEC-2026-1805 (protobuf) is transitively pinned by tensorflow==2.16.1;
+          # fixing it requires a TensorFlow upgrade, tracked separately.
+          pip-audit --ignore-vuln PYSEC-2026-1805
 
   frontend:
     name: Frontend (build + npm audit)
