@@ -130,8 +130,8 @@ SELECT
     COUNT(*) FILTER (WHERE s.pts IS NOT NULL)              AS games_played,
     COUNT(*) FILTER (WHERE s.wl = 'W')                     AS wins,
     COUNT(*) FILTER (WHERE s.wl = 'L')                     AS losses,
-    ROUND(AVG(s.pts)     FILTER (WHERE s.pts IS NOT NULL), 1) AS pts_pg,
-    ROUND(AVG(s.opp_pts) FILTER (WHERE s.opp_pts IS NOT NULL), 1) AS opp_pts_pg
+    ROUND((AVG(s.pts)     FILTER (WHERE s.pts IS NOT NULL))::numeric, 1) AS pts_pg,
+    ROUND((AVG(s.opp_pts) FILTER (WHERE s.opp_pts IS NOT NULL))::numeric, 1) AS opp_pts_pg
 FROM v_game_team_sides s
 WHERE s.team_id IS NOT NULL
   AND s.season_id IS NOT NULL
@@ -159,7 +159,11 @@ SELECT
     p.usg_pct
 FROM players p;
 
-CREATE UNIQUE INDEX IF NOT EXISTS mv_player_season_summary_pk
-    ON mv_player_season_summary (player_name, season);
+-- Таблица players может содержать несколько строк на (игрок, сезон) — по разным
+-- командам, поэтому уникальный индекс по (player_name, season) не строится.
+-- Для поиска карточек достаточно обычного индекса; REFRESH выполняется без
+-- CONCURRENTLY (см. scripts/refresh_analytics_views.py).
+CREATE INDEX IF NOT EXISTS idx_mv_player_season_summary
+    ON mv_player_season_summary (player_name, season, team_abbreviation);
 
 COMMIT;
